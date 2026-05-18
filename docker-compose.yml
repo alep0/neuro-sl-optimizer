@@ -1,0 +1,47 @@
+version: "3.9"
+
+# =============================================================================
+# docker-compose.yml — neuro-sl-optimizer
+# =============================================================================
+# Usage:
+#   docker-compose up               # Run with default settings
+#   docker-compose run pso_optimizer python scripts/run_pso.py --help
+# =============================================================================
+
+services:
+  pso_optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: neuro-sl-optimizer:latest
+    container_name: neuro_sl_pso
+
+    # Mount host directories into the container
+    volumes:
+      - ./data:/app/data:ro           # empirical data  (read-only)
+      - ./results:/app/results        # PSO results     (read-write)
+      - ./logs:/app/logs              # log files       (read-write)
+      - ./config:/app/config:ro       # configuration   (read-only)
+
+    # Environment variables (override here or via .env file)
+    environment:
+      PSO_REALIZATION:  "${PSO_REALIZATION:-1}"
+      PSO_OP_CORR:      "${PSO_OP_CORR:-1}"
+      PSO_OP_NET:       "${PSO_OP_NET:-3}"
+      PSO_OP_MODEL:     "${PSO_OP_MODEL:-1}"
+      PSO_LOG_LEVEL:    "${PSO_LOG_LEVEL:-INFO}"
+      OMP_NUM_THREADS:  "${OMP_NUM_THREADS:-4}"
+
+    # Restart only on explicit failure (not on clean exit)
+    restart: "no"
+
+    # Resource limits (adjust to your hardware)
+    deploy:
+      resources:
+        limits:
+          cpus:   "8"
+          memory: "16g"
+        reservations:
+          cpus:   "2"
+          memory: "4g"

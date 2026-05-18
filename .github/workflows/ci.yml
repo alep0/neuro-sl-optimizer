@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint & format
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install ruff black
+
+      - name: ruff check
+        run: ruff check source/ scripts/ validations/
+
+      - name: black --check
+        run: black --check source/ scripts/ validations/
+
+  # ---------------------------------------------------------------------------
+  # Build C++ extension + run tests
+  # ---------------------------------------------------------------------------
+  test:
+    name: Build & Test (Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libomp-dev build-essential
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libomp
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install numpy scipy matplotlib seaborn pybind11 \
+                      pytest pytest-cov setuptools
+
+      - name: Build C++ extension
+        run: python setup.py build_ext --inplace
+        continue-on-error: true  # Tests fall back to pure-Python if build fails
+
+      - name: Validate configuration
+        run: python validations/validate_config.py
+
+      - name: Validate signal processing utilities
+        run: python validations/validate_signal_processing.py
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest validations/ -v \
+            --cov=source \
+            --cov-report=xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # Docker build smoke test
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t neuro-sl-optimizer:ci .
+
+      - name: Smoke test — Python environment inside container
+        run: |
+          docker run --rm neuro-sl-optimizer:ci \
+            python -c "import numpy, scipy, matplotlib; print('Stack OK')"

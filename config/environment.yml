@@ -1,0 +1,33 @@
+name: pso_opt_env
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.11
+
+  # Core scientific stack
+  - numpy>=1.24
+  - scipy>=1.10
+  - matplotlib>=3.7
+  - seaborn>=0.12
+
+  # System / process utilities
+  - psutil>=5.9
+
+  # Build tools
+  - pybind11>=2.11
+  - setuptools>=68
+  - pip
+
+  # Development / testing
+  - pytest>=7.4
+  - pytest-cov>=4.1
+  - black>=23.0
+  - ruff>=0.1
+
+  # pip-only packages
+  - pip:
+      # Install the local package after conda env is active and build_ext is run:
+      # pip install -e .
