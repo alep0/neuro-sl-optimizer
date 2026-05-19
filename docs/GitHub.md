@@ -10,16 +10,20 @@ Go to https://github.com/new and create a repository named `neuro-sl-optimizer`.
 
 ```bash
 cd neuro-sl-optimizer
+
 git init
+git branch -M main
 git add .
+
 #git reset
 #git rm --cached old_versions
+
 git status
+
 git remote add origin https://github.com/alep0/neuro-sl-optimizer.git
 git remote set-url origin git@github.com:alep0/neuro-sl-optimizer.git
 git remote -v
 git commit -m "feat: initial project structure and PSO refactor"
-git branch -M main
 git push -u origin main
 
 ls -al ~/.ssh
@@ -31,7 +35,6 @@ ssh-add ~/.ssh/id_ed25519
 cat ~/.ssh/id_ed25519.pub
 ssh -T git@github.com
 
-git clone git@github.com:alep0/neuro-sl-optimizer.git
 git clone https://github.com/alep0/neuro-sl-optimizer.git
 
 ```

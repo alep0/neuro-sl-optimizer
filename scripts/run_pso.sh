@@ -165,7 +165,7 @@ main() {
     check_environment
 
     # Build realization list
-    read -ra REA_LIST <<< "$REALIZATIONS"
+    IFS=' ' read -ra REA_LIST <<< "$REALIZATIONS"
     log_info "Realization list: ${REA_LIST[*]}"
 
     local failures=0

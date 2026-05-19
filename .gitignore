@@ -92,4 +92,4 @@ data/external/
 
 # Carpetas
 #git rm -r --cached old_versions
-*old_versions*/
+old_versions*/

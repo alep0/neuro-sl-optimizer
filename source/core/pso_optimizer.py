@@ -204,24 +204,35 @@ class CorrelationPSO:
             trajectory = run_simulation(cfg)
 
             # Band-pass filter
+            """
             trajectory_filt = np.stack([
                 bandpass_filter(trajectory[i], **ctx.filter_kwargs)
                 for i in range(len(trajectory))
             ])
+            """
 
             # Downsample
-            trajectory_filt = trajectory_filt[:, :: ctx.downsample_step]
+            #trajectory_filt = trajectory_filt[:, :: ctx.downsample_step]
+            trajectory_filt = trajectory[:, :: ctx.downsample_step]
+            #trajectory_filt = trajectory
 
+            #print(trajectory_filt[0,:])
+            print(trajectory_filt)
+            print( np.shape( trajectory_filt ) )
             # Correlation
             corr = compute_correlation_matrix(
                 trajectory_filt, mode=ctx.op_corr, frac=ctx.cross_corr_frac
             )
 
+            print(corr)
             # Coarse-grain
             corr_cg = coarse_grain_matrix(corr, ctx.invalid_rois)
 
+            print(corr_cg)
             # Normalise and compute MSE
             corr_norm = corr_cg / np.max(np.abs(corr_cg))
+            
+            print(corr_norm)
             mse = float(np.mean((corr_norm - ctx.target_corr) ** 2))
             return mse
 
@@ -368,7 +379,8 @@ def run_pso_optimisation(
     with signals_file.open("r", encoding="utf-8") as fh:
         zsave = json.load(fh)
 
-    real_signals = np.array(zsave["signal_data"])
+    #real_signals = np.array(zsave["signal_data"])
+    real_signals = np.array( list( zsave['signal_data'].values() ) )
     tman: int = cfg_raw.get("tman_samples", 30)
     real_signals = real_signals[:, :tman]
     logger.info("Empirical signals loaded: shape=%s", real_signals.shape)
@@ -381,10 +393,12 @@ def run_pso_optimisation(
     )
     cross_corr_frac: float = cfg_raw.get("cross_corr_frac", 0.2)
 
+    print( np.shape( real_signals ) )
     target_corr_full = compute_correlation_matrix(
         real_signals, mode=op_corr, frac=cross_corr_frac
     )
-    target_corr_cg = coarse_grain_matrix(target_corr_full, invalid_rois)
+    #target_corr_cg = coarse_grain_matrix(target_corr_full, invalid_rois)
+    target_corr_cg = target_corr_full
     target_corr = target_corr_cg / np.max(np.abs(target_corr_cg))
     logger.info("Target correlation matrix built: shape=%s", target_corr.shape)
 
@@ -396,7 +410,7 @@ def run_pso_optimisation(
         [1e4, 1e5], [-10.0, 10.0], [20.0, 60.0]
     ]))
     freq_bounds = np.tile(
-        cfg_raw.get("freq_bounds", [20.0, 60.0]), (n_rois, 1)
+        cfg_raw.get("freq_bounds", [20.0, 60.0]), (n_rois - 1, 1)
     )
     bounds = np.vstack([bounds_base, freq_bounds])
 
@@ -461,12 +475,17 @@ def run_pso_optimisation(
 
     trajectory = run_simulation(final_cfg)
 
+    """
     trajectory_filt = np.stack([
         bandpass_filter(trajectory[i], **filter_kwargs)
         for i in range(len(trajectory))
     ])
     trajectory_filt = trajectory_filt[:, :: cfg_raw.get("downsample_step", 20_000)]
+    """
+    trajectory_filt = trajectory[:, :: cfg_raw.get("downsample_step", 20_000)]
+    #trajectory_filt = trajectory
 
+    print( np.shape( trajectory_filt ) )
     corr_final = compute_correlation_matrix(
         trajectory_filt, mode=op_corr, frac=cross_corr_frac
     )
