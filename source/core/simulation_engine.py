@@ -22,6 +22,10 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.colors import ListedColormap
+
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
@@ -100,6 +104,9 @@ class SimulationConfig:
     f: np.ndarray = field(default_factory=lambda: 40.0 * np.ones(79 * 2))
     a: float = -5.0
     sig_noise: float = 1e-3
+    
+    # Tu nueva variable con tamaño dinámico
+    Wg: Optional[np.ndarray] = None
 
     # Time
     tmax: float = 60.0
@@ -201,11 +208,29 @@ class ConnectivityLoader:
 
     @classmethod
     def load_op3(
-        cls, data_dir: Path, rat: str, th_value: str, ending: str
+        cls, data_dir: Path, rat: str, th_value: str, ending: str, wg: np.ndarray
     ) -> Tuple[np.ndarray, ...]:
         """Tau-based delays (op_net=3)."""
         prefix = f"th-{th_value}_{rat}"
+        
         C1 = cls.load_matrix(data_dir / f"{prefix}_w.txt")
+        if wg is not None:
+            N = len( C1 )
+            idx = 0
+            for i in range(N):
+                for j in range(N):
+                    if i < j:
+                        if( C1[i, j] > 0 ):
+                            #print(f"i: {i}, j: {j}, C1ij: {C1[i, j]}, wg: {wg[idx]}, idx: {idx}")
+                            C1[i, j] = wg[idx]
+                            idx = idx + 1
+        
+        fig = plt.figure(figsize=(8, 6))
+        lim = max(wg)
+        sns.heatmap( C1, cmap="coolwarm", vmin=-lim, vmax=lim, square=True )
+        fig.savefig( str(data_dir / f"{prefix}_w_gen.png") )
+        plt.close(fig)
+        
         m1 = cls.load_matrix(data_dir / f"{prefix}_tau.txt")
         v = cls.load_matrix(data_dir / f"{prefix}_v.txt")
         logger.info("Loaded op_net=3 connectivity for rat=%s", rat)
@@ -256,7 +281,8 @@ class ConnectivityProcessor:
         N = C1.shape[0]
         mask = ~np.eye(N, dtype=bool)
         if C2 is None:
-            total = np.sum(C1[mask])
+            total = np.sum( np.abs( C1[mask] ) )
+            print(total)
             if total == 0:
                 raise ValueError("C1 has zero total weight – check connectivity file.")
             return C1 / total, None
@@ -489,7 +515,7 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
         )
     elif op == 3:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op3(
-            config.data_dir, config.rat, config.th_value, config.ending
+            config.data_dir, config.rat, config.th_value, config.ending, config.Wg
         )
     else:
         raise ValueError(f"Unsupported op_net={op}. Valid values: 2, 3, 4.")

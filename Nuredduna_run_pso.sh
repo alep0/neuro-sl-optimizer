@@ -1,10 +1,11 @@
 #!/usr/bin/sh
 
-#chmod +x Nuredduna_run_pso.sh
-#./Nuredduna_run_pso.sh
+#chmod +x scripts/Nuredduna_run_pso.sh
+#chmod +x scripts/run_pso.sh
+#./scripts/Nuredduna_run_pso.sh
 
 # "R01"
-# "1 2 3 4 5 6 7 8 9 10"
+# "1 2"
 # "1"
 # "3"
 # "1"
@@ -19,10 +20,6 @@ rea=$2
 oc=$3
 on=$4
 om=$5
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-cd "${PROJECT_ROOT}//scripts"
 
 # Parámetros ajustables
 SLEEP_BETWEEN_POLLS=5
@@ -39,13 +36,10 @@ for r in $rea;
       attempt=$((attempt + 1))
       echo "Enviando job para t=$t (intento $attempt)"
 
+      MY_JOB="./scripts/run_pso.sh --realizations \"$r\" --op-corr \"$oc\" --op-net \"$on\" --op-model \"$om\""
+
       # lanzar el job y capturar la línea "Submitted batch job <id>"
-      SUB_OUT=$(run -t 123:30 -c 1 -m 16 -j run_pso_c1_m16_"$rat" ./run_pso.sh \
-      --realizations "$rea" \
-      --op-corr "$oc" \
-      --op-net "$on" \
-      --op-model "$om" \
-      2>&1)
+      SUB_OUT=$(run -t 123:30 -c 1 -m 16 -j run_pso_c1_m16_"$rat" "$MY_JOB" 2>&1)
 
       RETCODE=$?
       echo $SUB_OUT
@@ -73,8 +67,8 @@ for r in $rea;
         continue
       fi
 
-      LOGFILE_e="run_simulation_analysis.sh.e${JOBID}"
-      LOGFILE_o="run_simulation_analysis.sh.o${JOBID}"
+      LOGFILE_e="$(pwd)/scripts/run_pso.sh.e${JOBID}"
+      LOGFILE_o="$(pwd)/scripts/run_pso.sh.o${JOBID}"
       echo "Job enviado: $JOBID. Esperando a que aparezca el log $LOGFILE_o..."
 
       # Esperar a que el log exista y que el job termine de escribir (polling)
@@ -91,8 +85,8 @@ for r in $rea;
           break
         fi
 
-        if grep -q "| INFO     | source.core.simulation_engine | Backend: C++ (accelerated) " "$LOGFILE_o"; then
-          echo "Job t=$t finalizó correctamente según $LOGFILE_o. Continuando con el siguiente t."
+        if grep -q "| INFO     | source.core.simulation_engine | Backend: C++ (accelerated) " "$LOGFILE_e"; then
+          echo "Job t=$t finalizó correctamente según $LOGFILE_e. Continuando con el siguiente t."
           break 2
         fi
 

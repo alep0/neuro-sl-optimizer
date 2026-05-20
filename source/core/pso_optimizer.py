@@ -72,11 +72,7 @@ class PSOConfig:
     w: float = 0.7
     c1: float = 1.5
     c2: float = 1.5
-    bounds: np.ndarray = field(default_factory=lambda: np.array([
-        [1e4, 1e5],   # K  – global coupling
-        [-10.0, 10.0],  # a  – bifurcation parameter
-        [20.0, 60.0],   # ω  – shared frequency (single-freq model)
-    ]))
+    bounds: Optional[np.ndarray] = None
 
     def validate(self) -> None:
         if self.n_particles < 1:
@@ -190,9 +186,7 @@ class CorrelationPSO:
         ctx = self._ctx
         try:
             cfg = SimulationConfig(
-                K=float(params[0]),
-                a=float(params[1]),
-                f=params[2:],
+                Wg=params,
                 op_net=ctx.op_net,
                 op_model=ctx.op_model,
                 **ctx.sim_config_kwargs,
@@ -405,14 +399,50 @@ def run_pso_optimisation(
     # ------------------------------------------------------------------
     # Assemble PSO & evaluation configs from config.json
     # ------------------------------------------------------------------
-    n_rois: int = cfg_raw.get("n_rois", 158)
-    bounds_base = np.array(cfg_raw.get("bounds_base", [
-        [1e4, 1e5], [-10.0, 10.0], [20.0, 60.0]
-    ]))
-    freq_bounds = np.tile(
-        cfg_raw.get("freq_bounds", [20.0, 60.0]), (n_rois - 1, 1)
-    )
-    bounds = np.vstack([bounds_base, freq_bounds])
+    
+    def load_matrix(file_path: Path) -> np.ndarray:
+        """Load a whitespace-delimited matrix from *file_path*."""
+        if not file_path.exists():
+            raise FileNotFoundError(f"Connectivity file not found: {file_path}")
+        try:
+            # 1. Intentamos cargar como flotantes (tu código original)
+            matrix = np.loadtxt(str(file_path))
+        
+            # DIAGNÓSTICO A: ¿Es una matriz dispersa?
+            if not np.any(matrix):
+                print("Alerta: ¡Absolutamente todos los elementos son exactamente 0.0!")
+            else:
+                num_non_zero = np.count_nonzero(matrix)
+                total_elements = matrix.size
+                print(f"La matriz NO está vacía. Tiene {num_non_zero} elementos distintos de cero de un total de {total_elements}.")
+            
+            print(f"Loaded matrix: {file_path}, shape = {matrix.shape}")
+            return matrix
+        
+        except Exception as exc:
+            raise IOError(f"Failed to read {file_path}: {exc}") from exc
+            
+    matrix = load_matrix( project_root / "data" / "raw" / "th-0.0_R01_w.txt" )
+    print( matrix )
+    
+    wg = []
+    N = len( matrix )
+    for i in range(N):
+        for j in range(N):
+            if i < j:
+                if( matrix[i, j] > 0 ):
+                    wg.append( matrix[i, j] )
+    
+    print(wg)
+    
+    wg_max = max( wg )
+    wg_len = len( wg )
+    
+    print(f"wg_max: {wg_max}, wg_len: {wg_len}")
+    
+    bounds = np.tile( [ -wg_max, wg_max ], ( wg_len, 1) )
+    
+    print(bounds)
 
     pso_cfg = PSOConfig(
         n_particles=cfg_raw.get("n_particles", 4),
@@ -461,9 +491,7 @@ def run_pso_optimisation(
     # ------------------------------------------------------------------
     logger.info("Running final simulation with best parameters …")
     final_cfg = SimulationConfig(
-        K=float(best_params[0]),
-        a=float(best_params[1]),
-        f=best_params[2:],
+        Wg=best_params,
         op_net=op_net,
         op_model=op_model,
         **sim_config_kwargs,

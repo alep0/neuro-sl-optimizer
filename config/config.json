@@ -17,13 +17,6 @@
   "pso_c1":       1.5,
   "pso_c2":       1.5,
 
-  "bounds_base": [
-    [10000.0, 100000.0],
-    [-10.0,    10.0],
-    [20.0,     60.0]
-  ],
-  "freq_bounds":  [20.0, 60.0],
-
   "filter_high_freq": 0.5,
   "filter_low_freq":  0.01,
   "filter_fs":        10000.0,

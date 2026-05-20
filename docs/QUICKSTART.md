@@ -102,6 +102,7 @@ python scripts/run_pso.py \
 
 ```bash
 bash scripts/run_pso.sh --realizations "1 2 3" --op-corr 1 --op-net 3 --op-model 1
+./Nuredduna_run_pso.sh "R01" "1 2" "1" "3" "1"
 ```
 
 **Multiple realizations in one command:**
