@@ -101,6 +101,9 @@ python scripts/run_pso.py \
 **Bash wrapper:**
 
 ```bash
+chmod +x Nuredduna_run_pso.sh
+chmod +x scripts/run_pso.sh
+
 bash scripts/run_pso.sh --realizations "1 2 3" --op-corr 1 --op-net 3 --op-model 1
 ./Nuredduna_run_pso.sh "R01" "1 2" "1" "3" "1"
 ```

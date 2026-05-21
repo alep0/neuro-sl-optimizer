@@ -1,9 +1,10 @@
 {
   "_comment": "neuro-sl-optimizer configuration file. Edit paths and parameters to match your data.",
 
-  "data_dir":     "data/raw",
-  "signals_file": "data/processed/signals.json",
-  "output_dir":   "results",
+  "rat":          "R02",
+  "data_dir":     "data/raw/t1/R02",
+  "signals_file": "data/processed/p2/R02/signals.json",
+  "output_dir":   "results_2_2_t1_R02",
 
   "tmax":         60.0,
   "tman_samples": 600,

@@ -208,12 +208,13 @@ class ConnectivityLoader:
 
     @classmethod
     def load_op3(
-        cls, data_dir: Path, rat: str, th_value: str, ending: str, wg: np.ndarray
+        cls, data_dir: Path, rat: str, th_value: str, ending: str, 
+        wg: np.ndarray, save_dir: Path
     ) -> Tuple[np.ndarray, ...]:
         """Tau-based delays (op_net=3)."""
         prefix = f"th-{th_value}_{rat}"
         
-        C1 = cls.load_matrix(data_dir / f"{prefix}_w.txt")
+        C1 = cls.load_matrix( data_dir / f"{prefix}_w.txt" )
         if wg is not None:
             N = len( C1 )
             idx = 0
@@ -228,7 +229,7 @@ class ConnectivityLoader:
         fig = plt.figure(figsize=(8, 6))
         lim = max(wg)
         sns.heatmap( C1, cmap="coolwarm", vmin=-lim, vmax=lim, square=True )
-        fig.savefig( str(data_dir / f"{prefix}_w_gen.png") )
+        fig.savefig( str( save_dir / f"{prefix}_w_gen.png" ) )
         plt.close(fig)
         
         m1 = cls.load_matrix(data_dir / f"{prefix}_tau.txt")
@@ -515,7 +516,8 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
         )
     elif op == 3:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op3(
-            config.data_dir, config.rat, config.th_value, config.ending, config.Wg
+            config.data_dir, config.rat, config.th_value, config.ending, 
+            config.Wg, config.output_dir
         )
     else:
         raise ValueError(f"Unsupported op_net={op}. Valid values: 2, 3, 4.")

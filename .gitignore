@@ -77,11 +77,12 @@ htmlcov/
 logs/*.log
 results/
 !results/.gitkeep
+results_*/
 
 # Data files — track only structure, not content
-data/raw/*.txt
-data/processed/*.json
-data/processed/*.npy
+data/raw/
+data/processed/
+data/processed/
 data/external/
 
 # Keep placeholder files so directories are tracked by git

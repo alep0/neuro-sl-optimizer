@@ -128,6 +128,7 @@ class EvaluationContext:
     ])
     op_net: int = 3
     op_model: int = 1
+    rat: str = "R01"
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +190,7 @@ class CorrelationPSO:
                 Wg=params,
                 op_net=ctx.op_net,
                 op_model=ctx.op_model,
+                rat=ctx.rat,
                 **ctx.sim_config_kwargs,
             )
             if not cfg.use_cpp:
@@ -355,13 +357,23 @@ def run_pso_optimisation(
     # ------------------------------------------------------------------
     # Resolve paths
     # ------------------------------------------------------------------
-    data_dir = Path(cfg_raw.get("data_dir", str(project_root / "data" / "processed")))
-    signals_file = Path(cfg_raw.get("signals_file", str(data_dir / "signals.json")))
-    output_base = Path(cfg_raw.get("output_dir", str(project_root / "results")))
+    
+    data_dir = Path( 
+        cfg_raw.get( "data_dir", str( project_root / "data" / "raw" ) ) 
+        )
+    print(data_dir)
+    signals_file = Path( cfg_raw.get( "signals_file", 
+                         str( project_root / "data" / "processed" / "signals.json" ) )
+                         )
+    print(signals_file)
+    output_base = Path( cfg_raw.get( "output_dir", 
+                        str( project_root / "results" ) )
+                        )
+    print(output_base)
     output_dir = output_base / f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir( parents=True, exist_ok=True )
 
-    logger.info("Output directory: %s", output_dir)
+    logger.info( "Output directory: %s", output_dir )
 
     # ------------------------------------------------------------------
     # Load empirical signals
@@ -422,7 +434,9 @@ def run_pso_optimisation(
         except Exception as exc:
             raise IOError(f"Failed to read {file_path}: {exc}") from exc
             
-    matrix = load_matrix( project_root / "data" / "raw" / "th-0.0_R01_w.txt" )
+    rat = cfg_raw.get( "rat" )
+    print(data_dir / f"th-0.0_{rat}_w.txt")
+    matrix = load_matrix( data_dir / f"th-0.0_{rat}_w.txt" )
     print( matrix )
     
     wg = []
@@ -477,6 +491,7 @@ def run_pso_optimisation(
         invalid_rois=invalid_rois,
         op_net=op_net,
         op_model=op_model,
+        rat=rat,
     )
 
     # ------------------------------------------------------------------
@@ -493,6 +508,7 @@ def run_pso_optimisation(
     final_cfg = SimulationConfig(
         Wg=best_params,
         op_net=op_net,
+        rat=rat,
         op_model=op_model,
         **sim_config_kwargs,
     )
