@@ -10,6 +10,8 @@
 #   ./scripts/run_pso.sh [OPTIONS]
 #
 # Options:
+#   -s, --rats          "R01 R02" Space-separated list of Rats identifiers
+#                                  (default: "R01")
 #   -r, --realizations  "1 2 3"   Space-separated list of realization IDs
 #                                  (default: "1")
 #   -c, --op-corr       1|2       Correlation mode (default: 1)
@@ -20,7 +22,7 @@
 #   -h, --help                    Print this help message
 #
 # Example:
-#   ./scripts/run_pso.sh --realizations "1 2 3" --op-corr 1 --op-net 3 --op-model 1
+#   ./scripts/run_pso.sh --rats "R01 R02" --realizations "1 2" --op-corr 1 --op-net 3 --op-model 1
 # =============================================================================
 
 set -euo pipefail
@@ -29,6 +31,7 @@ IFS=$'\n\t'
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
+RATS="R01"
 REALIZATIONS="1"
 OP_CORR=1
 OP_NET=3
@@ -64,6 +67,8 @@ usage() {
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -s|--rats)
+                RATS="$2"; shift 2 ;;
             -r|--realizations)
                 REALIZATIONS="$2"; shift 2 ;;
             -c|--op-corr)
@@ -156,6 +161,7 @@ main() {
 
     log_info "============================================================"
     log_info "PSO Pipeline START"
+    log_info "rats: $RATS"
     log_info "realizations: $REALIZATIONS"
     log_info "op_corr=$OP_CORR | op_net=$OP_NET | op_model=$OP_MODEL"
     log_info "log_level=$LOG_LEVEL"
@@ -168,30 +174,38 @@ main() {
     IFS=' ' read -ra REA_LIST <<< "$REALIZATIONS"
     log_info "Realization list: ${REA_LIST[*]}"
 
+    IFS=' ' read -ra RAT_LIST <<< "$RATS"
+    log_info "Rat list: ${RAT_LIST[*]}"
+
     local failures=0
-    local total=${#REA_LIST[@]}
+    local total_rea=${#REA_LIST[@]}
+    local total_rat=${#RAT_LIST[@]}
 
-    for rea in "${REA_LIST[@]}"; do
-        log_info "------------------------------------------------------------"
-        log_info "Running realization: $rea"
+    for rat in "${RAT_LIST[@]}"; do
+        for rea in "${REA_LIST[@]}"; do
+            log_info "------------------------------------------------------------"
+            log_info "Running rat: $rat"
+            log_info "Running realization: $rea"
 
-        if python3 "${SCRIPT_DIR}/run_pso.py" \
-            --realization "$rea" \
-            --op-corr "$OP_CORR" \
-            --op-net "$OP_NET" \
-            --op-model "$OP_MODEL" \
-            --log-dir "$LOG_DIR" \
-            --log-level "$LOG_LEVEL" \
-            ${CONFIG_ARG}; then
-            log_info "Realization $rea: SUCCESS"
-        else
-            log_error "Realization $rea: FAILED"
-            (( failures++ )) || true
-        fi
+            if python3 "${SCRIPT_DIR}/run_pso.py" \
+                --rats "$rat" \
+                --realization "$rea" \
+                --op-corr "$OP_CORR" \
+                --op-net "$OP_NET" \
+                --op-model "$OP_MODEL" \
+                --log-dir "$LOG_DIR" \
+                --log-level "$LOG_LEVEL" \
+                ${CONFIG_ARG}; then
+                log_info "Realization $rea: SUCCESS"
+            else
+                log_error "Realization $rea: FAILED"
+                (( failures++ )) || true
+            fi
+        done
     done
 
     log_info "============================================================"
-    log_info "Pipeline complete: $((total - failures))/$total realizations succeeded."
+    log_info "Pipeline complete: $((total_rea * total_rat - failures))/$((total_rea * total_rat)) realizations x rats succeeded."
 
     if [[ $failures -gt 0 ]]; then
         log_error "$failures realization(s) failed. See $LOG_FILE for details."

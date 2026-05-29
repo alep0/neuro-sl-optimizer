@@ -36,7 +36,7 @@ for r in $rea;
       attempt=$((attempt + 1))
       echo "Enviando job para t=$t (intento $attempt)"
 
-      MY_JOB="./scripts/run_pso.sh --realizations \"$r\" --op-corr \"$oc\" --op-net \"$on\" --op-model \"$om\""
+      MY_JOB="./scripts/run_pso.sh --rats \"$rat\" --realizations \"$r\" --op-corr \"$oc\" --op-net \"$on\" --op-model \"$om\""
 
       # lanzar el job y capturar la línea "Submitted batch job <id>"
       SUB_OUT=$(run -t 123:30 -c 1 -m 16 -j run_pso_c1_m16_"$rat" "$MY_JOB" 2>&1)
@@ -86,7 +86,7 @@ for r in $rea;
         fi
 
         if grep -q "| INFO     | source.core.simulation_engine | Backend: C++ (accelerated) " "$LOGFILE_e"; then
-          echo "Job t=$t finalizó correctamente según $LOGFILE_e. Continuando con el siguiente t."
+          echo "Job t=$t finalizó correctamente según $LOGFILE_e. Continuando con el siguiente t. rea: $r"
           break 2
         fi
 

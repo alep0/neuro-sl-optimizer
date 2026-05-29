@@ -46,57 +46,64 @@ def _build_parser() -> argparse.ArgumentParser:
             "Stuart-Landau PSO functional-connectivity optimiser.\n\n"
             "Optimises coupling and frequency parameters of a network of "
             "Stuart-Landau oscillators to match empirical fMRI correlation matrices."
-        ),
+            ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+        )
+    parser.add_argument(
+        "--rats", "-s",
+        nargs="+",
+        default=["R01"],
+        metavar="ID",
+        help="One or more rat identifiers (default: R01).",
+        )
     parser.add_argument(
         "--realization", "-r",
         nargs="+",
         default=["1"],
         metavar="ID",
         help="One or more realization identifiers (default: 1).",
-    )
+        )
     parser.add_argument(
         "--op-corr", "-c",
         type=int,
         choices=[1, 2],
         default=1,
         help="Correlation mode: 1=Pearson (default), 2=cross-correlation.",
-    )
+        )
     parser.add_argument(
         "--op-net", "-n",
         type=int,
         choices=[2, 3, 4],
         default=3,
         help="Network connectivity mode: 2=velocity, 3=tau (default), 4=bimodal.",
-    )
+        )
     parser.add_argument(
         "--op-model", "-m",
         type=int,
         choices=[1, 2],
         default=1,
         help="Model variant: 1=fixed frequencies (default), 2=connectivity-derived.",
-    )
+        )
     parser.add_argument(
         "--config",
         type=Path,
         default=None,
         metavar="PATH",
         help="Path to config.json (default: <project_root>/config/config.json).",
-    )
+        )
     parser.add_argument(
         "--log-dir",
         type=Path,
         default=_PROJECT_ROOT / "logs",
         metavar="DIR",
         help="Directory for log files (default: <project_root>/logs).",
-    )
+        )
     parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging verbosity (default: INFO).",
-    )
+        )
     return parser
 
 
@@ -130,39 +137,47 @@ def main() -> None:
         log_dir=args.log_dir,
         log_filename="run.log",
         level=numeric_level,
-    )
+        )
 
     logger = logging.getLogger("run_pso")
     logger.info("Starting PSO pipeline")
     logger.info(
-        "realizations=%s | op_corr=%d | op_net=%d | op_model=%d",
-        args.realization, args.op_corr, args.op_net, args.op_model,
-    )
+        "rats=%s | realizations=%s | op_corr=%d | op_net=%d | op_model=%d",
+        args.rats, args.realization, args.op_corr, args.op_net, args.op_model,
+        )
 
     any_failure = False
-    for realization in args.realization:
-        logger.info("─" * 60)
-        logger.info("Processing realization: %s", realization)
-        exit_code = run_pso_optimisation(
-            realization_index=realization,
-            op_corr=args.op_corr,
-            op_net=args.op_net,
-            op_model=args.op_model,
-            config_path=args.config,
-        )
-        if exit_code != 0:
-            logger.error(
-                "Realization %s finished with error code %d", realization, exit_code
-            )
-            any_failure = True
-        else:
-            logger.info("Realization %s completed successfully.", realization)
+    for rat in args.rats:
+        for realization in args.realization:
+            logger.info("─" * 60)
+            logger.info("Processing realization: %s", realization)
+        
+            exit_code = run_pso_optimisation(
+                rat=rat,
+                realization_index=realization,
+                op_corr=args.op_corr,
+                op_net=args.op_net,
+                op_model=args.op_model,
+                config_path=args.config,
+                #checkpoint_dir=Path("results/checkpoints"),
+                #resume_from_checkpoint=Path("checkpoint_iter_0001.npz"),
+                )
+        
+            if exit_code != 0:
+                logger.error(
+                    "Realization %s finished with error code %d", realization, exit_code
+                    )
+                any_failure = True
+            else:
+                logger.info("Realization %s completed successfully.", realization)
 
-    if any_failure:
-        logger.error("One or more realizations failed. Check logs for details.")
-        sys.exit(1)
+        if any_failure:
+            logger.error("One or more realizations failed. Check logs for details.")
+            sys.exit(1)
 
-    logger.info("All realizations completed successfully.")
+        logger.info("All realizations completed successfully.")
+        logger.info("Rat %s completed successfully.", rat)
+        
     sys.exit(0)
 
 
