@@ -86,12 +86,12 @@ for r in $rea;
         fi
 
         if grep -q "| INFO     | source.core.simulation_engine | Backend: C++ (accelerated) " "$LOGFILE_e"; then
-          echo "Job t=$t finalizó correctamente según $LOGFILE_e. Continuando con el siguiente t. rea: $r"
+          echo "Job t=$t finalizó correctamente según $LOGFILE_e. Continuando con el siguiente t. Rat: $rat Rea: $r"
           break 2
         fi
 
-        if grep -q -E "WARNING:root:C++ module not available, using pure Python" "$LOGFILE_o"; then
-          echo "Detectado 'WARNING:root:C++ module not available, using pure Python' en $LOGFILE_o para t=$t. Reintentando en otro nodo..."
+        if grep -q -E "| INFO     | source.core.simulation_engine | Backend: Python (pure NumPy)" "$LOGFILE_e"; then
+          echo "Detectado 'WARNING:root:C++ module not available, using pure Python' en $LOGFILE_e para t=$t. Reintentando en otro nodo..."
           break
         fi
 

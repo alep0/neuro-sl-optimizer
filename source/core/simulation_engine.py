@@ -10,6 +10,10 @@ Supports three network modes (op_net):
     2 – Velocity-based delays (d / vel)
     3 – Tau-based delays (tau matrix)
     4 – Bimodal connectivity (two weight layers C1 / C2)
+    
+    5 - Saving w generated as .txt file.
+    6 - Loading or saving w_gen automatic.
+    
 """
 
 from __future__ import annotations
@@ -178,6 +182,25 @@ class ConnectivityLoader:
             return matrix
         except Exception as exc:
             raise IOError(f"Failed to read {file_path}: {exc}") from exc
+    
+    @staticmethod
+    def save_matrix_as_text(matrix: np.ndarray, filepath: str) -> None:
+        """Write a 2-D numpy array to a whitespace-delimited text file.
+
+        Parameters
+        ----------
+        matrix:
+            2-D array to write.
+        filepath:
+            Destination path.
+        """
+        try:
+            with open(filepath, "w") as fh:
+                for row in matrix:
+                    fh.write(" ".join(map(str, row)) + "\n")
+            logger.info("Matrix saved → %s", filepath)
+        except FileNotFoundError as exc:
+            logger.error("save_matrix_as_text failed for %s: %s", filepath, exc)
 
     @classmethod
     def load_op4(
@@ -214,23 +237,31 @@ class ConnectivityLoader:
         """Tau-based delays (op_net=3)."""
         prefix = f"th-{th_value}_{rat}"
         
-        C1 = cls.load_matrix( data_dir / f"{prefix}_w.txt" )
-        if wg is not None:
-            N = len( C1 )
-            idx = 0
-            for i in range(N):
-                for j in range(N):
-                    if i < j:
-                        if( C1[i, j] > 0 ):
-                            #print(f"i: {i}, j: {j}, C1ij: {C1[i, j]}, wg: {wg[idx]}, idx: {idx}")
-                            C1[i, j] = wg[idx]
-                            idx = idx + 1
+        if "external" in str(data_dir):
+            C1 = cls.load_matrix( data_dir / f"{prefix}_w_gen.txt" )
         
-        fig = plt.figure(figsize=(8, 6))
-        lim = max(wg)
-        sns.heatmap( C1, cmap="coolwarm", vmin=-lim, vmax=lim, square=True )
-        fig.savefig( str( save_dir / f"{prefix}_w_gen.png" ) )
-        plt.close(fig)
+        if "raw" in str(data_dir):
+            #"""
+            C1 = cls.load_matrix( data_dir / f"{prefix}_w.txt" )
+            if wg is not None:
+                N = len( C1 )
+                idx = 0
+                for i in range(N):
+                    for j in range(N):
+                        if i < j:
+                            if( C1[i, j] > 0 ):
+                                #print(f"i: {i}, j: {j}, C1ij: {C1[i, j]}, wg: {wg[idx]}, idx: {idx}")
+                                C1[i, j] = wg[idx]
+                                idx = idx + 1
+        
+            fig = plt.figure(figsize=(8, 6))
+            lim = max(wg)
+            sns.heatmap( C1, cmap="coolwarm", vmin=-lim, vmax=lim, square=True )
+            fig.savefig( str( save_dir / f"{prefix}_w_gen.png" ) )
+            plt.close(fig)
+        
+            cls.save_matrix_as_text( C1, str( save_dir / f"{prefix}_w_gen.txt" ) )
+            #"""
         
         m1 = cls.load_matrix(data_dir / f"{prefix}_tau.txt")
         v = cls.load_matrix(data_dir / f"{prefix}_v.txt")

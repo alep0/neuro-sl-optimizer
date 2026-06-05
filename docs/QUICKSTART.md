@@ -63,6 +63,11 @@ data/
     └── signals.json          ← {"signal_data": [[...], ...]}
 ```
 
+scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer
+
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer/results \
+&& tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna
+
 ### 5. Edit configuration
 
 ```bash
@@ -105,7 +110,14 @@ chmod +x Nuredduna_run_pso.sh
 chmod +x scripts/run_pso.sh
 
 bash scripts/run_pso.sh --rats "R01 R02" --realizations "1 2" --op-corr 1 --op-net 3 --op-model 1
+bash scripts/run_pso.sh --rats "R03 R04 R05 R06 R07 R08 R09 R10 R12 R13 R14 R15 R16 R17 R18 R19" \
+                        --realizations "1" --op-corr 1 --op-net 3 --op-model 1
+
 ./Nuredduna_run_pso.sh "R01 R02" "1 2" "1" "3" "1"
+./Nuredduna_run_pso.sh "R03 R04 R05 R06 R07 R08 R09 R10 R12 R13 R14 R15 R16 R17 R18 R19" \
+                        "1 2 3 4 5 6 7 8 9 10" \
+                        "1" "3" "1"
+
 ```
 
 **Multiple realizations in one command:**

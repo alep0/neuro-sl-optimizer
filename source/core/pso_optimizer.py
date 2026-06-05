@@ -21,6 +21,10 @@ v1.0.0  Refactored from PSO_corr_mat_loss_v0_9_n2.py
         - All paths relative to project root (no hard-coded /mnt/c/… paths)
         - Thread-safe evaluate(); inf returned on any simulation failure
         - Checkpoint saving added.
+        
+        - Fine tuning K, load w generated.
+        - w_gen matrix saving or K fine-tuning controlled by config.json
+        
 """
 
 from __future__ import annotations
@@ -171,17 +175,20 @@ class CorrelationPSO:
         D = pso_cfg.bounds.shape[0]
         lo, hi = pso_cfg.bounds[:, 0], pso_cfg.bounds[:, 1]
         
-        if len(initial_condition) != D:
-            raise ValueError(
-                f"Lenght of initial_condition: ({len(initial_condition)}) "
-                f"different (D={D})." )
+        #"""
+        #if len(initial_condition) != D:
+            #raise ValueError(
+            #    f"Lenght of initial_condition: ({len(initial_condition)}) "
+            #    f"different (D={D})." )
             
-        if initial_condition is not None:
+        if len(initial_condition) > 0:
             self.positions: np.ndarray = ( np.tile(initial_condition, (pso_cfg.n_particles, 1))
                                           + self._rng.uniform(lo, hi, (pso_cfg.n_particles, D)) * 0.1 )
             self.positions = np.clip(self.positions, lo, hi)
         else:
             self.positions: np.ndarray = self._rng.uniform(lo, hi, (pso_cfg.n_particles, D))
+        #"""
+        #self.positions: np.ndarray = self._rng.uniform(lo, hi, (pso_cfg.n_particles, D))
         
         self.velocities: np.ndarray = np.zeros((pso_cfg.n_particles, D))
         self.pbest_positions: np.ndarray = self.positions.copy()
@@ -205,13 +212,25 @@ class CorrelationPSO:
         """Return MSE loss for *params*; returns ``inf`` on any error."""
         ctx = self._ctx
         try:
-            cfg = SimulationConfig(
-                Wg=params,
-                op_net=ctx.op_net,
-                op_model=ctx.op_model,
-                rat=ctx.rat,
-                **ctx.sim_config_kwargs,
-            )
+            if( len(params) > 1 ):                
+                cfg = SimulationConfig(
+                    Wg=params,
+                    #K=params[0],
+                    op_net=ctx.op_net,
+                    op_model=ctx.op_model,
+                    rat=ctx.rat,
+                    **ctx.sim_config_kwargs,
+                    )
+            else:
+                cfg = SimulationConfig(
+                    #Wg=params,
+                    K=params[0],
+                    op_net=ctx.op_net,
+                    op_model=ctx.op_model,
+                    rat=ctx.rat,
+                    **ctx.sim_config_kwargs,
+                    )                
+                
             if not cfg.use_cpp:
                 logger.warning("C++ backend unavailable; skipping evaluation.")
                 return float("inf")
@@ -607,8 +626,13 @@ def run_pso_optimisation(
         + rat ) )
     print(output_base)
     
-    output_dir = ( Path("results/optimization") / output_base / 
-        f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
+    if( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
+        output_dir = ( Path("results/optimization_K") / output_base /       
+                       f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
+    else:
+        output_dir = ( Path("results/optimization") / output_base /       
+                       f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
+    
     output_dir.mkdir( parents=True, exist_ok=True )
 
     logger.info( "Output directory: %s", output_dir )
@@ -672,28 +696,37 @@ def run_pso_optimisation(
         except Exception as exc:
             raise IOError(f"Failed to read {file_path}: {exc}") from exc
             
-    #rat = cfg_raw.get( "rat" )
-    print(data_dir / f"th-0.0_{rat}_w.txt")
-    matrix = load_matrix( data_dir / f"th-0.0_{rat}_w.txt" )
-    print( matrix )
+    if( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
+        #"""
+        wg = []
+        bounds = np.tile( [ 1000, 100000 ], ( 1, 1) )
+        #"""
+    else:
+        #"""
+        #rat = cfg_raw.get( "rat" )
+        print(data_dir / f"th-0.0_{rat}_w.txt")
+        matrix = load_matrix( data_dir / f"th-0.0_{rat}_w.txt" )
+        print( matrix )
+        
+        wg = []
+        N = len( matrix )
+        for i in range(N):
+            for j in range(N):
+                if i < j:
+                    if( matrix[i, j] > 0 ):
+                        wg.append( matrix[i, j] )
+        
+        #print(wg)
+        
+        wg_max = max( wg )
+        wg_len = len( wg )
+        
+        print(f"wg_max: {wg_max}, wg_len: {wg_len}")
+        
+        bounds = np.tile( [ -wg_max, wg_max ], ( wg_len, 1) )
+        #"""        
     
-    wg = []
-    N = len( matrix )
-    for i in range(N):
-        for j in range(N):
-            if i < j:
-                if( matrix[i, j] > 0 ):
-                    wg.append( matrix[i, j] )
-    
-    print(wg)
-    
-    wg_max = max( wg )
-    wg_len = len( wg )
-    
-    print(f"wg_max: {wg_max}, wg_len: {wg_len}")
-    
-    bounds = np.tile( [ -wg_max, wg_max ], ( wg_len, 1) )
-    
+    print(wg)    
     print(bounds)
 
     pso_cfg = PSOConfig(
@@ -778,13 +811,25 @@ def run_pso_optimisation(
     # Final simulation with best parameters
     # ------------------------------------------------------------------
     logger.info("Running final simulation with best parameters …")
-    final_cfg = SimulationConfig(
-        Wg=best_params,
-        op_net=op_net,
-        rat=rat,
-        op_model=op_model,
-        **sim_config_kwargs,
-        )
+    
+    if( len( best_params ) > 1 ):
+        final_cfg = SimulationConfig(
+            Wg=best_params,
+            #K=best_params[0],
+            op_net=op_net,
+            rat=rat,
+            op_model=op_model,
+            **sim_config_kwargs,
+            )
+    else:
+        final_cfg = SimulationConfig(
+            #Wg=best_params,
+            K=best_params[0],
+            op_net=op_net,
+            rat=rat,
+            op_model=op_model,
+            **sim_config_kwargs,
+            )        
 
     if not final_cfg.use_cpp:
         logger.error("C++ backend required but unavailable. Aborting.")
@@ -861,9 +906,15 @@ def _save_results(
         for idx, pos in enumerate(position_history):
             fh.write(f"{idx} - {pos.tolist()}\n")
         fh.write("\n## Best parameters\n")
-        fh.write(f"K    = {best_params[0]}\n")
-        fh.write(f"a    = {best_params[1]}\n")
-        fh.write(f"freq = {best_params[2:].tolist()}\n")
+        
+        fh.write(f"best_p= {best_params}\n")
+        
+        #fh.write(f"Wg   = {best_params}\n")
+        #fh.write(f"K    = {best_params}\n")
+        
+        #fh.write(f"a    = {best_params[1]}\n")
+        #fh.write(f"freq = {best_params[2:].tolist()}\n")
+        
         fh.write(f"\n## Best MSE = {best_error}\n")
     logger.info("Parameters saved to %s", param_file)
 
@@ -880,9 +931,11 @@ def _save_results(
         "op_net": op_net,
         "op_model": op_model,
         "best_error": best_error,
-        "best_K": float(best_params[0]),
-        "best_a": float(best_params[1]),
-        "best_freq": best_params[2:].tolist(),
+        "best_p": best_params.tolist(),
+        #"best_K": float(best_params[0]),
+        #"best_w": best_params,
+        #"best_a": float(best_params[1]),
+        #"best_freq": best_params[2:].tolist(),
         "n_iterations": len(error_history),
         }
     with (output_dir / "summary.json").open("w", encoding="utf-8") as fh:
