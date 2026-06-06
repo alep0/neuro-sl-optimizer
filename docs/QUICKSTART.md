@@ -63,9 +63,17 @@ data/
     └── signals.json          ← {"signal_data": [[...], ...]}
 ```
 
-scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer
+scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer
 
-ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer/results \
+mkdir -p /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
+
+cp /data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1/checkpoint_iter_0999.* /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
+
+mkdir -p /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/external/t1/R15
+
+cp -r /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/raw/t1/R15 /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/external/t1
+
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results \
 && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna
 
 ### 5. Edit configuration

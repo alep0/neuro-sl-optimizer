@@ -1,20 +1,21 @@
 {
   "_comment": "neuro-sl-optimizer configuration file. Edit paths and parameters to match your data.",
 
-  "_data_dir":     "data/raw/t1",
-  "data_dir":     "data/external/t1",
+  "data_dir":     "data/raw/t1",
+  "_data_dir":     "data/external/t1",
   
   "signals_dir":  "data/processed/p2",
   "signals_file": "signals.json",
 
-  "input_dir":    "results_t1_1_",
+  "input_dir":    "results_t1_10_",
   "output_dir":   "results_t1_",
 
-  "max_iter":     1,
+  "max_iter":     10,
   "n_particles":  1,
 
   "_checkpoint_dir":           "results/checkpoints",
-  "checkpoint_dir":           "results/checkpoints_K",
+  "__checkpoint_dir":           "results/checkpoints_K",
+  "checkpoint_dir":           "results/checkpoints_C",
 
   "resume_from_checkpoint":   null,
   "_resume_from_checkpoint":  "checkpoint_iter_0000.npz",

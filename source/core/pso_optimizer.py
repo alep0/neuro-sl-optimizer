@@ -24,6 +24,7 @@ v1.0.0  Refactored from PSO_corr_mat_loss_v0_9_n2.py
         
         - Fine tuning K, load w generated.
         - w_gen matrix saving or K fine-tuning controlled by config.json
+        - w_gen and K fine-tuning combined.
         
 """
 
@@ -176,10 +177,10 @@ class CorrelationPSO:
         lo, hi = pso_cfg.bounds[:, 0], pso_cfg.bounds[:, 1]
         
         #"""
-        #if len(initial_condition) != D:
-            #raise ValueError(
-            #    f"Lenght of initial_condition: ({len(initial_condition)}) "
-            #    f"different (D={D})." )
+        if len(initial_condition) != D:
+            raise ValueError(
+                f"Lenght of initial_condition: ({len(initial_condition)}) "
+                f"different (D={D})." )
             
         if len(initial_condition) > 0:
             self.positions: np.ndarray = ( np.tile(initial_condition, (pso_cfg.n_particles, 1))
@@ -194,7 +195,7 @@ class CorrelationPSO:
         self.pbest_positions: np.ndarray = self.positions.copy()
         self.pbest_values: np.ndarray = np.array(
             [self._evaluate(p, 0) for p in self.positions]
-        )
+            )
         best_idx = int(np.argmin(self.pbest_values))
         self.gbest_position: np.ndarray = self.pbest_positions[best_idx].copy()
         self.gbest_value: float = float(self.pbest_values[best_idx])
@@ -202,7 +203,7 @@ class CorrelationPSO:
         logger.info(
             "PSO initialised: %d particles, dim=%d, initial gbest=%.6f",
             pso_cfg.n_particles, D, self.gbest_value,
-        )
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -214,22 +215,23 @@ class CorrelationPSO:
         try:
             if( len(params) > 1 ):                
                 cfg = SimulationConfig(
-                    Wg=params,
-                    #K=params[0],
+                    Wg=params[1:],
+                    K=params[0],
+                    
                     op_net=ctx.op_net,
                     op_model=ctx.op_model,
                     rat=ctx.rat,
                     **ctx.sim_config_kwargs,
                     )
-            else:
-                cfg = SimulationConfig(
+            #else:
+                #cfg = SimulationConfig(
                     #Wg=params,
-                    K=params[0],
-                    op_net=ctx.op_net,
-                    op_model=ctx.op_model,
-                    rat=ctx.rat,
-                    **ctx.sim_config_kwargs,
-                    )                
+                    #K=params[0],
+                    #op_net=ctx.op_net,
+                    #op_model=ctx.op_model,
+                    #rat=ctx.rat,
+                    #**ctx.sim_config_kwargs,
+                    #)                
                 
             if not cfg.use_cpp:
                 logger.warning("C++ backend unavailable; skipping evaluation.")
@@ -256,7 +258,7 @@ class CorrelationPSO:
             # Correlation
             corr = compute_correlation_matrix(
                 trajectory_filt, mode=ctx.op_corr, frac=ctx.cross_corr_frac
-            )
+                )
 
             print(corr)
             # Coarse-grain
@@ -524,12 +526,22 @@ class CorrelationPSO:
             ax.set_xlabel("Iteration")
             ax.set_ylabel("MSE")
             ax.set_title("PSO Convergence")
-            ax.set_yscale("log")
+            #ax.set_yscale("log")
             ax.grid(True, alpha=0.3)
             fig.tight_layout()
             fig.savefig( str( checkpoint_dir / "iteration_convergence.png" ), dpi=150 )
             plt.close(fig)
             logger.info("Figures saved to %s", checkpoint_dir)
+            
+            summary = {
+                "iteration": iteration,
+                "best_error": self.gbest_value,
+                "best_p": self.gbest_position.tolist(),
+                "n_iterations": len(error_history),
+                }
+            with ( checkpoint_dir / "summary.json").open("w", encoding="utf-8") as fh:
+                json.dump(summary, fh, indent=2)
+            logger.info(f"Summary JSON {iteration} saved.")
 
         logger.info(
             "PSO complete. Best error=%.6f | params=%s",
@@ -626,7 +638,10 @@ def run_pso_optimisation(
         + rat ) )
     print(output_base)
     
-    if( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
+    if( cfg_raw.get( "checkpoint_dir" ).endswith("_C") ):
+        output_dir = ( Path("results/optimization_C") / output_base /       
+                       f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
+    elif( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
         output_dir = ( Path("results/optimization_K") / output_base /       
                        f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
     else:
@@ -696,12 +711,12 @@ def run_pso_optimisation(
         except Exception as exc:
             raise IOError(f"Failed to read {file_path}: {exc}") from exc
             
-    if( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
+    if( cfg_raw.get( "checkpoint_dir" ).endswith("_C") ):
         #"""
-        wg = []
-        bounds = np.tile( [ 1000, 100000 ], ( 1, 1) )
+        Kg = [np.float64(1000)]
+        bounds_K = np.tile( [ 1000, 100000 ], ( 1, 1) )
         #"""
-    else:
+    #else:
         #"""
         #rat = cfg_raw.get( "rat" )
         print(data_dir / f"th-0.0_{rat}_w.txt")
@@ -723,8 +738,12 @@ def run_pso_optimisation(
         
         print(f"wg_max: {wg_max}, wg_len: {wg_len}")
         
-        bounds = np.tile( [ -wg_max, wg_max ], ( wg_len, 1) )
-        #"""        
+        bounds_w = np.tile( [ -wg_max, wg_max ], ( wg_len, 1) )
+        
+        bounds = np.vstack([bounds_K, bounds_w])
+        #"""      
+        
+        wg = Kg + wg
     
     print(wg)    
     print(bounds)
@@ -814,22 +833,23 @@ def run_pso_optimisation(
     
     if( len( best_params ) > 1 ):
         final_cfg = SimulationConfig(
-            Wg=best_params,
-            #K=best_params[0],
+            Wg=best_params[1:],
+            K=best_params[0],
+            
             op_net=op_net,
             rat=rat,
             op_model=op_model,
             **sim_config_kwargs,
             )
-    else:
-        final_cfg = SimulationConfig(
+    #else:
+        #final_cfg = SimulationConfig(
             #Wg=best_params,
-            K=best_params[0],
-            op_net=op_net,
-            rat=rat,
-            op_model=op_model,
-            **sim_config_kwargs,
-            )        
+            #K=best_params[0],
+            #op_net=op_net,
+            #rat=rat,
+            #op_model=op_model,
+            #**sim_config_kwargs,
+            #)        
 
     if not final_cfg.use_cpp:
         logger.error("C++ backend required but unavailable. Aborting.")
@@ -962,7 +982,7 @@ def _save_results(
     ax.set_xlabel("Iteration")
     ax.set_ylabel("MSE")
     ax.set_title("PSO Convergence")
-    ax.set_yscale("log")
+    #ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(str(output_dir / "convergence.png"), dpi=150)
