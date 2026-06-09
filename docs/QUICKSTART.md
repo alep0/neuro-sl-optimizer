@@ -34,7 +34,9 @@ Matplotlib, Seaborn, pybind11).
 ### 3. Build the C++ extension
 
 ```bash
-python setup.py build_ext --inplace
+
+bash scripts/build_multiarch.sh
+python source/core/select_backend.py
 ```
 
 Verify the build:
@@ -63,9 +65,9 @@ data/
     └── signals.json          ← {"signal_data": [[...], ...]}
 ```
 
-scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer
+scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer
 
-mkdir -p /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
+mkdir -p /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
 
 cp /data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1/checkpoint_iter_0999.* /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
 
@@ -73,7 +75,7 @@ mkdir -p /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/d
 
 cp -r /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/raw/t1/R15 /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/external/t1
 
-ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results \
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results \
 && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna
 
 ### 5. Edit configuration
@@ -116,6 +118,8 @@ python scripts/run_pso.py \
 ```bash
 chmod +x Nuredduna_run_pso.sh
 chmod +x scripts/run_pso.sh
+
+nano config/config.json
 
 bash scripts/run_pso.sh --rats "R01 R02" --realizations "1 2" --op-corr 1 --op-net 3 --op-model 1
 bash scripts/run_pso.sh --rats "R03 R04 R05 R06 R07 R08 R09 R10 R12 R13 R14 R15 R16 R17 R18 R19" \

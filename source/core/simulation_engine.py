@@ -14,6 +14,8 @@ Supports three network modes (op_net):
     5 - Saving w generated as .txt file.
     6 - Loading or saving w_gen automatic.
     
+    7 - Multiarch.
+    
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib.colors import ListedColormap
+#from matplotlib.colors import ListedColormap
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -36,19 +38,18 @@ from matplotlib.colors import ListedColormap
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Try to import the compiled C++ extension
+# Load the best available compiled C++ extension (multi-arch aware)
 # ---------------------------------------------------------------------------
-try:
-    import stuart_landau_simulator as _cpp_mod  # type: ignore
+from source.core.select_backend import load_best_simulator  # type: ignore
 
-    CPP_AVAILABLE = True
-    logger.info("C++ accelerated module loaded successfully.")
-except ImportError:
-    CPP_AVAILABLE = False
+_cpp_mod = load_best_simulator()   # None → pure-Python fallback
+CPP_AVAILABLE = _cpp_mod is not None
+
+if not CPP_AVAILABLE:
     logger.warning(
-        "C++ module 'stuart_landau_simulator' not found. "
+        "No compiled C++ backend found. "
         "Falling back to pure-Python simulator. "
-        "Build with: python setup.py build_ext --inplace"
+        "Build with: python setup_multiarch.py build_ext --inplace"
     )
 
 
@@ -522,7 +523,13 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
         config = SimulationConfig()
 
     use_cpp = CPP_AVAILABLE and config.use_cpp
-    backend = "C++ (accelerated)" if use_cpp else "Python (pure NumPy)"
+    if use_cpp:
+        tier = getattr(_cpp_mod, "__name__", "unknown").replace(
+            "stuart_landau_simulator_", ""
+        ).upper()
+        backend = f"C++ (accelerated) [{tier}]"
+    else:
+        backend = "Python (pure NumPy)"
     logger.info("=" * 60)
     logger.info("Stuart-Landau Simulation — START")
     logger.info(

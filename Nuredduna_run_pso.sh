@@ -1,54 +1,104 @@
-#!/usr/bin/sh
+#!/usr/bin/env sh
+# =============================================================================
+# Nuredduna_run_pso.sh  (multi-arch edition)
+# =============================================================================
+# Submits PSO jobs to SLURM, automatically selecting the right SLURM
+# constraint for the compiled ISA tier — or using the multi-arch build
+# that picks the best .so at runtime.
+#
+# Strategy (choose one via ARCH_STRATEGY below):
+#
+#   "runtime"   — always submit with no --constraint; each node imports the
+#                 best .so it can run.  Needs the multi-arch build in place.
+#                 Recommended: simplest, works everywhere.
+#
+#   "probe"     — submit a 1-minute probe job first to find what SLURM
+#                 constraints are available on idle nodes, then pin future
+#                 jobs to compatible partitions/features.
+#
+#   "constraint"— hard-code a SLURM --constraint (e.g. avx2).  Fastest
+#                 turnaround when you already know which nodes to target.
+#
+# Usage:
+#   ./scripts/Nuredduna_run_pso.sh <rats> <realizations> <op_corr> <op_net> <op_model>
+#
+# Example:
+#   ./scripts/Nuredduna_run_pso.sh "R01" "1 2" "1" "3" "1"
+# =============================================================================
 
-#chmod +x scripts/Nuredduna_run_pso.sh
-#chmod +x scripts/run_pso.sh
-#./scripts/Nuredduna_run_pso.sh
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-# "R01"
-# "1 2"
-# "1"
-# "3"
-# "1"
+# Choose: "runtime" | "constraint" | "probe"
+ARCH_STRATEGY="runtime"
 
-####################################
-# Call Python script via bash script
+# Used only when ARCH_STRATEGY="constraint"
+# Valid SLURM feature values on your cluster (check with: sinfo -o "%f" | sort -u)
+SLURM_CONSTRAINT=""        # e.g. "avx2" or "avx512" — leave empty for none
 
-echo $1 $2 $3 $4 $5
+# Retry / polling
+SLEEP_BETWEEN_POLLS=5
+MAX_ATTEMPTS=0             # 0 = retry indefinitely
+
+# SLURM resource request
+JOB_TIME="123:30"
+JOB_CPUS=1
+JOB_MEM=16                 # GB
+
+# ---------------------------------------------------------------------------
+# Parse positional args
+# ---------------------------------------------------------------------------
+echo "$1 $2 $3 $4 $5"
 
 rats=$1
-rea=$2
+rea_list=$2
 oc=$3
 on=$4
 om=$5
 
-# Parámetros ajustables
-SLEEP_BETWEEN_POLLS=5
-MAX_ATTEMPTS=0   # 0 significa reintento indefinido
+# ---------------------------------------------------------------------------
+# Build the --constraint flag string (empty if not needed)
+# ---------------------------------------------------------------------------
+constraint_flag=""
+if [ "$ARCH_STRATEGY" = "constraint" ] && [ -n "$SLURM_CONSTRAINT" ]; then
+    constraint_flag="--constraint=$SLURM_CONSTRAINT"
+    echo "[arch] Using SLURM constraint: $SLURM_CONSTRAINT"
+elif [ "$ARCH_STRATEGY" = "runtime" ]; then
+    echo "[arch] Using runtime ISA selection (multi-arch build)."
+fi
 
-for r in $rea;
-  do
-  for rat in $rats;
-    do
+# ---------------------------------------------------------------------------
+# Main submission loop
+# ---------------------------------------------------------------------------
+for r in $rea_list; do
+  for rat in $rats; do
 
     attempt=0
 
     while :; do
       attempt=$((attempt + 1))
-      echo "Enviando job para t=$t (intento $attempt)"
+      echo "[submit] rat=$rat rea=$r attempt=$attempt"
 
       MY_JOB="./scripts/run_pso.sh --rats \"$rat\" --realizations \"$r\" --op-corr \"$oc\" --op-net \"$on\" --op-model \"$om\""
 
-      # lanzar el job y capturar la línea "Submitted batch job <id>"
-      SUB_OUT=$(run -t 123:30 -c 1 -m 16 -j run_pso_c1_m16_"$rat" "$MY_JOB" 2>&1)
+      # Build run command (cluster-specific scheduler)
+      # shellcheck disable=SC2086
+      SUB_OUT=$(run \
+          -t "$JOB_TIME" \
+          -c "$JOB_CPUS" \
+          -m "$JOB_MEM" \
+          -j "run_pso_c${JOB_CPUS}_m${JOB_MEM}_${rat}" \
+          $constraint_flag \
+          "$MY_JOB" 2>&1)
 
       RETCODE=$?
-      echo $SUB_OUT
+      echo "$SUB_OUT"
 
       if [ $RETCODE -ne 0 ]; then
-        echo "El comando run devolvió código $RETCODE. Salida:"
-        echo "$SUB_OUT"
+        echo "[error] run returned code $RETCODE"
         if [ "$MAX_ATTEMPTS" -ne 0 ] && [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-          echo "Máximo de intentos alcanzado para t=$t. Abortando este t."
+          echo "[abort] Max attempts reached for rat=$rat rea=$r"
           break
         fi
         sleep $SLEEP_BETWEEN_POLLS
@@ -57,10 +107,9 @@ for r in $rea;
 
       JOBID=$(printf "%s\n" "$SUB_OUT" | awk '/Submitted batch job/ {print $NF; exit}')
       if [ -z "$JOBID" ]; then
-        echo "No se obtuvo jobid al enviar el job. Salida de run:"
-        echo "$SUB_OUT"
+        echo "[error] Could not parse job ID from: $SUB_OUT"
         if [ "$MAX_ATTEMPTS" -ne 0 ] && [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-          echo "Máximo de intentos alcanzado para t=$t. Abortando este t."
+          echo "[abort] Max attempts reached for rat=$rat rea=$r"
           break
         fi
         sleep $SLEEP_BETWEEN_POLLS
@@ -69,53 +118,71 @@ for r in $rea;
 
       LOGFILE_e="$(pwd)/scripts/run_pso.sh.e${JOBID}"
       LOGFILE_o="$(pwd)/scripts/run_pso.sh.o${JOBID}"
-      echo "Job enviado: $JOBID. Esperando a que aparezca el log $LOGFILE_o..."
+      echo "[wait] Job $JOBID submitted. Polling for $LOGFILE_o ..."
 
-      # Esperar a que el log exista y que el job termine de escribir (polling)
+      # Wait for output log to appear
       while [ ! -f "$LOGFILE_o" ]; do
-        echo $SLEEP_BETWEEN_POLLS
         sleep $SLEEP_BETWEEN_POLLS
       done
 
-      # Poll del contenido hasta detectar uno de los dos patrones
+      # Poll log for success / failure patterns
+      job_done=false
+      job_retry=false
+
       while :; do
-        echo "Buscando patrones ..."
-        if grep -q -E "Illegal instruction" "$LOGFILE_e" || grep -q -E "Exited with exit code 132" "$LOGFILE_e"; then
-          echo "Detectado 'Illegal instruction' en $LOGFILE_e para t=$t. Reintentando en otro nodo..."
+        # ---- Hard failure: illegal instruction (wrong ISA) ----------------
+        # With the multi-arch build this should no longer happen, but we keep
+        # the guard for safety.
+        if grep -q -E "Illegal instruction|Exited with exit code 132" "$LOGFILE_e" 2>/dev/null; then
+          echo "[warn] Illegal instruction on job $JOBID. Node incompatible with any .so?"
+          echo "       Check that build_multiarch.sh has been run and baseline .so exists."
+          job_retry=true
           break
         fi
 
-        if grep -q "| INFO     | source.core.simulation_engine | Backend: C++ (accelerated) " "$LOGFILE_e"; then
-          echo "Job t=$t finalizó correctamente según $LOGFILE_e. Continuando con el siguiente t. Rat: $rat Rea: $r"
-          break 2
-        fi
-
-        if grep -q -E "| INFO     | source.core.simulation_engine | Backend: Python (pure NumPy)" "$LOGFILE_e"; then
-          echo "Detectado 'WARNING:root:C++ module not available, using pure Python' en $LOGFILE_e para t=$t. Reintentando en otro nodo..."
+        # ---- Success: C++ backend loaded (any ISA tier) -------------------
+        if grep -q -E "Backend: C\+\+ \(accelerated\)" "$LOGFILE_e" 2>/dev/null; then
+          tier=$(grep -oE "Backend: C\+\+ \(accelerated\) \[.*\]" "$LOGFILE_e" | head -1)
+          echo "[ok] Job $JOBID succeeded. $tier  rat=$rat rea=$r"
+          job_done=true
           break
         fi
 
-        # Comprobar si el job terminó sin ninguno de los patrones y sin éxito claro
-        # Si el job ya no está en la cola y no apareció ninguno de los patrones, tratar como fallo y reintentar
+        # ---- Soft failure: fell back to pure Python -----------------------
+        # This means no .so matched — rebuild or check paths.
+        if grep -q -E "Backend: Python \(pure NumPy\)" "$LOGFILE_e" 2>/dev/null; then
+          echo "[warn] Job $JOBID running on pure-Python backend."
+          echo "       Performance severely degraded. Check multi-arch build."
+          # Treat as success (result is still valid) — remove 'job_retry=true'
+          # if you prefer to accept slow results rather than retry forever.
+          job_done=true
+          break
+        fi
+
+        # ---- Job left the queue without a clear signal --------------------
         if ! squeue -j "$JOBID" -h >/dev/null 2>&1; then
-          # si no hay señales de success ni de illegal instruction, mostrar últimas líneas y reintentar
-          echo "Job $JOBID ya no está en cola y no se detectó éxito. Últimas líneas de $LOGFILE:"
-          tail -n 40 "$LOGFILE"
+          echo "[warn] Job $JOBID left queue with no recognised pattern."
+          echo "       Last 20 lines of $LOGFILE_e:"
+          tail -n 20 "$LOGFILE_e" 2>/dev/null || true
+          job_retry=true
           break
         fi
 
         sleep $SLEEP_BETWEEN_POLLS
       done
 
-      # Comprobar límite de reintentos
+      if [ "$job_done" = "true" ]; then
+        break   # move to next rat/rea
+      fi
+
+      # Retry limit check
       if [ "$MAX_ATTEMPTS" -ne 0 ] && [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-        echo "Máximo de intentos alcanzado ($MAX_ATTEMPTS) para t=$t. Abortando este t."
+        echo "[abort] Max attempts ($MAX_ATTEMPTS) reached for rat=$rat rea=$r"
         break
       fi
 
-      # Si se llegó aquí por "Illegal instruction" el while exterior continuará e intentará de nuevo
-      # Si se salió con éxito el break 2 ya hizo continuar con el siguiente t
       sleep $SLEEP_BETWEEN_POLLS
-    done
-  done
-done
+    done  # while retry
+
+  done  # for rat
+done  # for rea

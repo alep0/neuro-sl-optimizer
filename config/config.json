@@ -7,10 +7,10 @@
   "signals_dir":  "data/processed/p2",
   "signals_file": "signals.json",
 
-  "input_dir":    "results_t1_10_",
+  "input_dir":    "results_t1_1_",
   "output_dir":   "results_t1_",
 
-  "max_iter":     10,
+  "max_iter":     1,
   "n_particles":  1,
 
   "_checkpoint_dir":           "results/checkpoints",

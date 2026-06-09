@@ -465,6 +465,7 @@ class CorrelationPSO:
             checkpoint_dir = Path(checkpoint_dir)
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+        Kh = []
         for iteration in range(start_iteration, cfg.max_iter):
             iter_start = time.time()
             for i in range(cfg.n_particles):
@@ -533,9 +534,11 @@ class CorrelationPSO:
             plt.close(fig)
             logger.info("Figures saved to %s", checkpoint_dir)
             
+            Kh.append( self.gbest_position.tolist()[0])
             summary = {
                 "iteration": iteration,
                 "best_error": self.gbest_value,
+                "Kh": Kh,
                 "best_p": self.gbest_position.tolist(),
                 "n_iterations": len(error_history),
                 }

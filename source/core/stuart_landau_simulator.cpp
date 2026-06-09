@@ -316,7 +316,10 @@ public:
 // ---------------------------------------------------------------------------
 // pybind11 module definition
 // ---------------------------------------------------------------------------
-PYBIND11_MODULE(stuart_landau_simulator, m) {
+#ifndef MODULE_NAME
+#define MODULE_NAME stuart_landau_simulator
+#endif
+PYBIND11_MODULE(MODULE_NAME, m) {
     m.doc() = R"pbdoc(
         C++ accelerated Stuart-Landau neural network simulator.
 
