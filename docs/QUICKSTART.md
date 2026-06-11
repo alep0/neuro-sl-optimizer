@@ -65,18 +65,27 @@ data/
     └── signals.json          ← {"signal_data": [[...], ...]}
 ```
 
+DATA
 scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer
 
-mkdir -p /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
+CHECKPOINT
+rat=R02
+mkdir -p /data/workspaces/aaaguado/experimental_multiarch/neuro-sl-optimizer/results/checkpoints_C/results_t1_500_20_${rat}/M3_r1_c1_f1
+cp /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results/checkpoints_C/results_t1_500_20_${rat}/M3_r1_c1_f1/checkpoint_iter_0499.* /data/workspaces/aaaguado/experimental_multiarch/neuro-sl-optimizer/results/checkpoints_C/results_t1_500_20_${rat}/M3_r1_c1_f1
 
-cp /data/workspaces/aaaguado/experimental_checkpoints/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1/checkpoint_iter_0999.* /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/results/checkpoints/results_t1_1000_20_R15/M3_r2_c1_f1
+rat=R16
+mkdir -p /data/workspaces/aaaguado/experimental_multiarch/neuro-sl-optimizer/results/checkpoints_C/results_t1_500_20_${rat}/M3_r1_c1_f1
+cp /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results/checkpoints_C/results_t1_500_20_${rat}/M3_r3_c1_f1/checkpoint_iter_0499.* /data/workspaces/aaaguado/experimental_multiarch/neuro-sl-optimizer/results/checkpoints_C/results_t1_500_20_${rat}/M3_r1_c1_f1
 
+FINE-TUNING
 mkdir -p /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/external/t1/R15
-
 cp -r /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/raw/t1/R15 /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/external/t1
 
-ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results \
+DOWNLOAD
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_multiarch/neuro-sl-optimizer/results \
 && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna
+
+ls /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results/optimization_C/results_t1_500_20_R16/M3_r3_c1_f1
 
 ### 5. Edit configuration
 

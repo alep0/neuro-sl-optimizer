@@ -133,7 +133,7 @@ for r in $rea_list; do
         # ---- Hard failure: illegal instruction (wrong ISA) ----------------
         # With the multi-arch build this should no longer happen, but we keep
         # the guard for safety.
-        if grep -q -E "Illegal instruction|Exited with exit code 132" "$LOGFILE_e" 2>/dev/null; then
+        if grep -q -E "Illegal instruction" "$LOGFILE_e" 2>/dev/null; then
           echo "[warn] Illegal instruction on job $JOBID. Node incompatible with any .so?"
           echo "       Check that build_multiarch.sh has been run and baseline .so exists."
           job_retry=true
@@ -141,7 +141,7 @@ for r in $rea_list; do
         fi
 
         # ---- Success: C++ backend loaded (any ISA tier) -------------------
-        if grep -q -E "Backend: C\+\+ \(accelerated\)" "$LOGFILE_e" 2>/dev/null; then
+        if grep -q -E "| INFO     | source.core.simulation_engine | Backend: C++ (accelerated) " "$LOGFILE_e" 2>/dev/null; then
           tier=$(grep -oE "Backend: C\+\+ \(accelerated\) \[.*\]" "$LOGFILE_e" | head -1)
           echo "[ok] Job $JOBID succeeded. $tier  rat=$rat rea=$r"
           job_done=true
@@ -150,7 +150,7 @@ for r in $rea_list; do
 
         # ---- Soft failure: fell back to pure Python -----------------------
         # This means no .so matched — rebuild or check paths.
-        if grep -q -E "Backend: Python \(pure NumPy\)" "$LOGFILE_e" 2>/dev/null; then
+        if grep -q -E "| INFO     | source.core.simulation_engine | Backend: Python (pure NumPy)" "$LOGFILE_e" 2>/dev/null; then
           echo "[warn] Job $JOBID running on pure-Python backend."
           echo "       Performance severely degraded. Check multi-arch build."
           # Treat as success (result is still valid) — remove 'job_retry=true'

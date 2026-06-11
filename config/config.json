@@ -7,24 +7,25 @@
   "signals_dir":  "data/processed/p2",
   "signals_file": "signals.json",
 
-  "input_dir":    "results_t1_1_",
+  "input_dir":    "results_t1_2_",
   "output_dir":   "results_t1_",
 
-  "max_iter":     1,
-  "n_particles":  1,
+  "max_iter":     2,
+  "n_particles":  2,
 
   "_checkpoint_dir":           "results/checkpoints",
   "__checkpoint_dir":           "results/checkpoints_K",
   "checkpoint_dir":           "results/checkpoints_C",
 
   "resume_from_checkpoint":   null,
-  "_resume_from_checkpoint":  "checkpoint_iter_0000.npz",
+  "_resume_from_checkpoint":  "checkpoint_iter_0499.npz",
 
   "tmax":         60.0,
   "tman_samples": 600,
 
   "n_rois":       158,
-  "invalid_rois": [0, 1, 2, 41, 78, 79, 80, 81, 120, 157],
+  "_invalid_rois": [0, 1, 2, 41, 78, 79, 80, 81, 120, 157],
+  "invalid_rois": [0, 1, 2, 41, 78],
   
   "pso_w":        0.7,
   "pso_c1":       1.5,

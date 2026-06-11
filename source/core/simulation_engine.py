@@ -15,6 +15,7 @@ Supports three network modes (op_net):
     6 - Loading or saving w_gen automatic.
     
     7 - Multiarch.
+    8 - Folding connectome.
     
 """
 
@@ -50,7 +51,7 @@ if not CPP_AVAILABLE:
         "No compiled C++ backend found. "
         "Falling back to pure-Python simulator. "
         "Build with: python setup_multiarch.py build_ext --inplace"
-    )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +107,7 @@ class SimulationConfig:
 
     # Model physics
     K: float = 1e5
-    f: np.ndarray = field(default_factory=lambda: 40.0 * np.ones(79 * 2))
+    f: np.ndarray = field(default_factory=lambda: 40.0 * np.ones(79 * 1))   #<--- fold
     a: float = -5.0
     sig_noise: float = 1e-3
     
@@ -135,6 +136,7 @@ class SimulationConfig:
     data_dir: Optional[Path] = None
     output_dir: Optional[Path] = None
     save_data: bool = False
+    
     use_cpp: bool = True
 
     def __post_init__(self) -> None:
@@ -171,6 +173,16 @@ class SimulationConfig:
 # ---------------------------------------------------------------------------
 class ConnectivityLoader:
     """Load structural connectivity files from disk."""
+
+    @staticmethod
+    def mat_folding( matrix: np.ndarray ) -> np.ndarray:
+        N = int( len( matrix )/2 )
+        matrix_folded = np.zeros((N, N))
+        for i in range(N):
+            for j in range(N):
+                if i < j:
+                    matrix_folded[i, j] = ( matrix[i, j] + matrix[i + N, j + N] ) / 2
+        return matrix_folded
 
     @staticmethod
     def load_matrix(file_path: Path) -> np.ndarray:
@@ -244,6 +256,8 @@ class ConnectivityLoader:
         if "raw" in str(data_dir):
             #"""
             C1 = cls.load_matrix( data_dir / f"{prefix}_w.txt" )
+            C1 = cls.mat_folding(C1)
+            
             if wg is not None:
                 N = len( C1 )
                 idx = 0
@@ -265,8 +279,13 @@ class ConnectivityLoader:
             #"""
         
         m1 = cls.load_matrix(data_dir / f"{prefix}_tau.txt")
+        m1 = cls.mat_folding( m1 )
+        
         v = cls.load_matrix(data_dir / f"{prefix}_v.txt")
+        v = cls.mat_folding( v )        
+        
         logger.info("Loaded op_net=3 connectivity for rat=%s", rat)
+        
         return C1, None, m1, None, None, v
 
 
@@ -284,7 +303,7 @@ class ConnectivityProcessor:
         m2: Optional[np.ndarray] = None,
         v: Optional[np.ndarray] = None,
         n: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, ...]:
+        ) -> Tuple[np.ndarray, ...]:
         """Force symmetry on all provided matrices."""
         N = C1.shape[0]
         upper = np.triu_indices(N, k=1)
@@ -309,16 +328,18 @@ class ConnectivityProcessor:
     @staticmethod
     def normalise(
         C1: np.ndarray, C2: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Divide weights by total off-diagonal sum."""
         N = C1.shape[0]
         mask = ~np.eye(N, dtype=bool)
+        
         if C2 is None:
             total = np.sum( np.abs( C1[mask] ) )
             print(total)
             if total == 0:
                 raise ValueError("C1 has zero total weight – check connectivity file.")
             return C1 / total, None
+        
         total = np.sum(C1[mask]) + np.sum(C2[mask])
         if total == 0:
             raise ValueError("C1+C2 have zero total weight.")
@@ -327,7 +348,7 @@ class ConnectivityProcessor:
     @staticmethod
     def to_delay_indices(
         C: np.ndarray, tau_matrix: np.ndarray, dt: float
-    ) -> Tuple[np.ndarray, int]:
+        ) -> Tuple[np.ndarray, int]:
         """Convert a continuous-time delay matrix to integer step indices."""
         delays = np.round(tau_matrix / dt).astype(np.int32)
         delays[C == 0] = 0
@@ -340,14 +361,16 @@ class ConnectivityProcessor:
         N = C.shape[0]
         n_half = N // 2
         freqs = np.zeros(N)
+        
         for i in range(n_half):
             freqs[i] = f_min + i
             freqs[i + n_half] = f_min + i
+            
         logger.info(
             "Derived frequencies: min=%.1f Hz, max=%.1f Hz",
             freqs.min(),
             freqs.max(),
-        )
+            )
         return freqs
 
 
@@ -374,7 +397,8 @@ class _PythonSimulator:
         max_history: int,
         C2: Optional[np.ndarray] = None,
         Delays2: Optional[np.ndarray] = None,
-    ) -> None:
+        ) -> None:
+        
         self._N = C1.shape[0]
         self._C1 = C1
         self._C2 = C2
@@ -411,7 +435,7 @@ class _PythonSimulator:
                     "Python sim progress: %.1f%% (t=%.4fs)",
                     100.0 * t / cfg.tmax,
                     t,
-                )
+                    )
 
             Znow = Z[:, -1]
             dz = Znow * (a + iomega - np.abs(Znow) ** 2) * cfg.dt
@@ -523,13 +547,15 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
         config = SimulationConfig()
 
     use_cpp = CPP_AVAILABLE and config.use_cpp
+    
     if use_cpp:
         tier = getattr(_cpp_mod, "__name__", "unknown").replace(
             "stuart_landau_simulator_", ""
-        ).upper()
+            ).upper()
         backend = f"C++ (accelerated) [{tier}]"
     else:
         backend = "Python (pure NumPy)"
+        
     logger.info("=" * 60)
     logger.info("Stuart-Landau Simulation — START")
     logger.info(
@@ -538,7 +564,7 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
         config.rat,
         config.op_net,
         config.tmax,
-    )
+        )
 
     # ------------------------------------------------------------------
     # Load connectivity
@@ -547,16 +573,16 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
     if op == 4:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op4(
             config.data_dir, config.rat, config.th_value, config.ending
-        )
+            )
     elif op == 2:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op2(
             config.data_dir, config.rat, config.th_value, config.ending, config.mean_vel
-        )
+            )
     elif op == 3:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op3(
             config.data_dir, config.rat, config.th_value, config.ending, 
             config.Wg, config.output_dir
-        )
+            )
     else:
         raise ValueError(f"Unsupported op_net={op}. Valid values: 2, 3, 4.")
 

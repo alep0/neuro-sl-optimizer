@@ -25,6 +25,7 @@ v1.0.0  Refactored from PSO_corr_mat_loss_v0_9_n2.py
         - Fine tuning K, load w generated.
         - w_gen matrix saving or K fine-tuning controlled by config.json
         - w_gen and K fine-tuning combined.
+        - Multiarch and folding connectome.
         
 """
 
@@ -167,7 +168,8 @@ class CorrelationPSO:
         eval_ctx: EvaluationContext,
         seed: Optional[int] = None,
         initial_condition: Optional[float] = None,
-    ) -> None:
+        ) -> None:
+        
         pso_cfg.validate()
         self._cfg = pso_cfg
         self._ctx = eval_ctx
@@ -287,6 +289,7 @@ class CorrelationPSO:
             name = str( ctx.sim_config_kwargs["output_dir"] / f"FC_iteration_{iteration}.png" )
             fig.savefig( name, dpi=150 )
             plt.close(fig)
+            
             logger.info("FC saved to %s", name )
             
             return mse
@@ -566,7 +569,8 @@ def run_pso_optimisation(
     config_path: Optional[Path] = None,
     checkpoint_dir: Optional[Path] = None,
     resume_from_checkpoint: Optional[Path] = None,
-) -> int:
+    ) -> int:
+    
     """Execute a full PSO optimisation run.
 
     Parameters
@@ -644,9 +648,11 @@ def run_pso_optimisation(
     if( cfg_raw.get( "checkpoint_dir" ).endswith("_C") ):
         output_dir = ( Path("results/optimization_C") / output_base /       
                        f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
+        
     elif( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
         output_dir = ( Path("results/optimization_K") / output_base /       
                        f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
+        
     else:
         output_dir = ( Path("results/optimization") / output_base /       
                        f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
@@ -667,25 +673,44 @@ def run_pso_optimisation(
 
     #real_signals = np.array(zsave["signal_data"])
     real_signals = np.array( list( zsave['signal_data'].values() ) )
-    tman: int = cfg_raw.get("tman_samples", 30)
+    tman: int = cfg_raw.get("tman_samples", 30)                     # <------------
     real_signals = real_signals[:, :tman]
+    
     logger.info("Empirical signals loaded: shape=%s", real_signals.shape)
 
     # ------------------------------------------------------------------
     # Build target correlation matrix
     # ------------------------------------------------------------------
+    def mat_folding( matrix: np.ndarray ) -> np.ndarray:
+        N = int( len( matrix )/2 )
+        matrix_folded = np.zeros((N, N))
+        for i in range(N):
+            for j in range(N):
+                if i < j:
+                    matrix_folded[i, j] = ( matrix[i, j] + matrix[i + N, j + N] ) / 2
+        return matrix_folded
+    
     invalid_rois: List[int] = cfg_raw.get(
-        "invalid_rois", [0, 1, 2, 41, 78, 79, 80, 81, 120, 157]
+        "invalid_rois", [0, 1, 2, 41, 78, 79, 80, 81, 120, 157]     # <--- fold
         )
+    
     cross_corr_frac: float = cfg_raw.get("cross_corr_frac", 0.2)
 
     print( np.shape( real_signals ) )
     target_corr_full = compute_correlation_matrix(
         real_signals, mode=op_corr, frac=cross_corr_frac
         )
+    
     #target_corr_cg = coarse_grain_matrix(target_corr_full, invalid_rois)
     target_corr_cg = target_corr_full
     target_corr = target_corr_cg / np.max(np.abs(target_corr_cg))
+    
+    target_corr = mat_folding( target_corr )
+    
+    N = target_corr.shape[0]
+    upper = np.triu_indices(N, k=1)
+    target_corr[upper[::-1]] = target_corr[upper]
+    
     logger.info("Target correlation matrix built: shape=%s", target_corr.shape)
 
     # ------------------------------------------------------------------
@@ -712,8 +737,8 @@ def run_pso_optimisation(
             return matrix
         
         except Exception as exc:
-            raise IOError(f"Failed to read {file_path}: {exc}") from exc
-            
+            raise IOError(f"Failed to read {file_path}: {exc}") from exc  
+      
     if( cfg_raw.get( "checkpoint_dir" ).endswith("_C") ):
         #"""
         Kg = [np.float64(1000)]
@@ -724,6 +749,9 @@ def run_pso_optimisation(
         #rat = cfg_raw.get( "rat" )
         print(data_dir / f"th-0.0_{rat}_w.txt")
         matrix = load_matrix( data_dir / f"th-0.0_{rat}_w.txt" )
+        print( matrix )
+        
+        matrix = mat_folding( matrix )
         print( matrix )
         
         wg = []
