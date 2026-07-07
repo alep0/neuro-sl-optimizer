@@ -106,6 +106,7 @@ class SimulationConfig:
     """
 
     # Model physics
+    #K: float = 1000
     K: float = 1e5
     f: np.ndarray = field(default_factory=lambda: 40.0 * np.ones(79 * 1))   #<--- fold
     a: float = -5.0
@@ -231,15 +232,83 @@ class ConnectivityLoader:
         return C1, C2, m1, m2, n, v
 
     @classmethod
+    def load_op1(
+        cls, data_dir: Path, rat: str, th_value: str, ending: str, mean_vel: float,
+        wg: np.ndarray, save_dir: Path
+    ) -> Tuple[np.ndarray, ...]:
+        """Velocity-based delays (op_net=1)."""
+        prefix = f"th-{th_value}_{rat}"
+        
+        if "raw" in str(data_dir):
+            #"""
+            C1 = cls.load_matrix( data_dir / f"{prefix}_w.txt" )
+            C1 = cls.mat_folding(C1)
+            
+            if wg is not None:
+                N = len( C1 )
+                idx = 0
+                for i in range(N):
+                    for j in range(N):
+                        if i < j:
+                            if( C1[i, j] > 0 ):
+                                #print(f"i: {i}, j: {j}, C1ij: {C1[i, j]}, wg: {wg[idx]}, idx: {idx}")
+                                C1[i, j] = wg[idx]
+                                idx = idx + 1
+        
+            fig = plt.figure(figsize=(8, 6))
+            lim = max(wg)
+            sns.heatmap( C1, cmap="coolwarm", vmin=-lim, vmax=lim, square=True )
+            fig.savefig( str( save_dir / f"{prefix}_w_gen.png" ) )
+            plt.close(fig)
+        
+        m1 = cls.load_matrix(data_dir / f"{prefix}_d.txt") * 0
+        m1 = cls.mat_folding( m1 )
+        
+        v = cls.load_matrix(data_dir / f"{prefix}_v.txt")
+        v = cls.mat_folding( v )
+        
+        logger.info("Loaded op_net=1 connectivity for rat=%s, delay=%s", rat, 0)
+        
+        return C1, None, m1, None, None, v    
+
+    @classmethod
     def load_op2(
-        cls, data_dir: Path, rat: str, th_value: str, ending: str, mean_vel: float
+        cls, data_dir: Path, rat: str, th_value: str, ending: str, mean_vel: float,
+        wg: np.ndarray, save_dir: Path
     ) -> Tuple[np.ndarray, ...]:
         """Velocity-based delays (op_net=2)."""
         prefix = f"th-{th_value}_{rat}"
-        C1 = cls.load_matrix(data_dir / f"{prefix}_w.txt")
+        
+        if "raw" in str(data_dir):
+            #"""
+            C1 = cls.load_matrix( data_dir / f"{prefix}_w.txt" )
+            C1 = cls.mat_folding(C1)
+            
+            if wg is not None:
+                N = len( C1 )
+                idx = 0
+                for i in range(N):
+                    for j in range(N):
+                        if i < j:
+                            if( C1[i, j] > 0 ):
+                                #print(f"i: {i}, j: {j}, C1ij: {C1[i, j]}, wg: {wg[idx]}, idx: {idx}")
+                                C1[i, j] = wg[idx]
+                                idx = idx + 1
+        
+            fig = plt.figure(figsize=(8, 6))
+            lim = max(wg)
+            sns.heatmap( C1, cmap="coolwarm", vmin=-lim, vmax=lim, square=True )
+            fig.savefig( str( save_dir / f"{prefix}_w_gen.png" ) )
+            plt.close(fig)
+        
         m1 = cls.load_matrix(data_dir / f"{prefix}_d.txt") / mean_vel
+        m1 = cls.mat_folding( m1 )
+        
         v = cls.load_matrix(data_dir / f"{prefix}_v.txt")
-        logger.info("Loaded op_net=2 connectivity for rat=%s", rat)
+        v = cls.mat_folding( v )
+        
+        logger.info("Loaded op_net=2 connectivity for rat=%s, mean_vel=%s", rat, mean_vel)
+        
         return C1, None, m1, None, None, v
 
     @classmethod
@@ -335,6 +404,7 @@ class ConnectivityProcessor:
         
         if C2 is None:
             total = np.sum( np.abs( C1[mask] ) )
+            #total = max( np.abs( C1[mask] ) )
             print(total)
             if total == 0:
                 raise ValueError("C1 has zero total weight – check connectivity file.")
@@ -574,9 +644,15 @@ def run_simulation(config: Optional[SimulationConfig] = None) -> np.ndarray:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op4(
             config.data_dir, config.rat, config.th_value, config.ending
             )
+    elif op == 1:
+        C1, C2, m1, m2, n, v = ConnectivityLoader.load_op1(
+            config.data_dir, config.rat, config.th_value, config.ending, config.mean_vel,
+            config.Wg, config.output_dir
+            )
     elif op == 2:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op2(
-            config.data_dir, config.rat, config.th_value, config.ending, config.mean_vel
+            config.data_dir, config.rat, config.th_value, config.ending, config.mean_vel,
+            config.Wg, config.output_dir
             )
     elif op == 3:
         C1, C2, m1, m2, n, v = ConnectivityLoader.load_op3(

@@ -4,10 +4,51 @@
  *
  * Implements a delayed-coupled Stuart-Landau oscillator network on a structural
  * connectome. Supports two connectivity layers (C1/C2), additive Gaussian noise,
- * and OpenMP parallelism for the coupling and history-shift loops.
+ * and OpenMP parallelism for the coupling loop.
+ *
+ * PERFORMANCE NOTES (Eigen port)
+ * -------------------------------
+ * This version replaces the original std::vector<std::vector<T>> storage with
+ * Eigen matrices/vectors and sparse structures. The main wins are:
+ *
+ *   1. Connectivity is stored as Eigen::SparseMatrix<> (row-major, CSR-like),
+ *      built ONCE in set_connectivity() from the dense C1/C2 weight matrices.
+ *      Real structural connectomes are usually sparse (many zero weights).
+ *      The original code looped over all N columns per row every single
+ *      timestep and branched on "if (kC1[n][j] != 0.0)" to skip absent edges.
+ *      With the sparse representation, the per-timestep coupling loop visits
+ *      ONLY the actual edges (via Eigen's InnerIterator) -- no wasted
+ *      iterations, no branch on every candidate edge, and it scales with the
+ *      number of connections rather than N^2. For a connectome with e.g. 10%
+ *      density this alone removes ~90% of the inner-loop work every step.
+ *   2. The per-edge delay index is stored in a companion sparse matrix built
+ *      with the identical sparsity pattern, so the two can be walked in
+ *      lock-step with two InnerIterators -- no re-deriving indices, no
+ *      redundant zero checks.
+ *   3. The per-timestep local Stuart-Landau update, the noise+coupling state
+ *      update, and the output write are expressed as Eigen array/vector
+ *      expressions, which are compiled down to SIMD (SSE/AVX) instructions
+ *      instead of scalar loops.
+ *   4. The history-buffer shift (previously an O(N * max_history) loop run
+ *      every step) is now a single Eigen block assignment
+ *      (Z.leftCols(max_history_-1) = Z.rightCols(max_history_-1)), which Eigen
+ *      lowers to a vectorized block copy.
+ *   5. Eigen::Map is used to interpret incoming numpy buffers directly as
+ *      Eigen matrices when building the sparse structures, removing the
+ *      manual element-by-element copy loops.
+ *
+ * The remaining gather, Z(j, di), is still a scatter/gather by nature (the
+ * delay index varies per edge), but it now only happens once per real edge
+ * instead of once per (n, j) candidate pair, and Z itself is a single
+ * contiguous Eigen allocation rather than N separately-allocated rows.
  *
  * Build via setup.py:
  *   python setup.py build_ext --inplace
+ *
+ * NOTE: Eigen is header-only but you must add its include path, e.g. in
+ * setup.py's Extension(..., include_dirs=[..., "/usr/include/eigen3"]) or
+ * via `pkg-config --cflags eigen3`. Recommended flags: -O3 -march=native
+ * -DNDEBUG -fopenmp (or your platform's OpenMP equivalent).
  *
  * Python interface (module name: stuart_landau_simulator):
  *   sim = StuartLandauSimulator(N, max_history, dt, dt_save, tmax, t_prev,
@@ -19,6 +60,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/complex.h>
+
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
 
 #include <complex>
 #include <cmath>
@@ -34,6 +78,22 @@
 
 namespace py = pybind11;
 using Complex = std::complex<double>;
+
+// Row-major so that, for a fixed row n, all entries (varying j) are
+// contiguous in memory -- matches numpy's default C-contiguous layout too,
+// so incoming buffers can be wrapped with Eigen::Map with no copy loop.
+using MatrixXdR = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using MatrixXiR = Eigen::Matrix<int,    Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+// Row-major to match numpy's default (C-contiguous) memory layout, so the
+// output array can be written via Eigen expressions with a zero-copy Map.
+using MatrixXdRowMajor = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+// Row-major sparse (CSR-like) storage for the connectivity/delay matrices.
+// Row-major means InnerIterator over row n walks that row's nonzeros
+// contiguously -- exactly the access pattern the coupling loop needs.
+using SpMatXd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+using SpMatXi = Eigen::SparseMatrix<int,    Eigen::RowMajor>;
 
 // ---------------------------------------------------------------------------
 // Helper: format a log message with a consistent prefix
@@ -59,11 +119,14 @@ private:
     double sig_noise_;
     double mean_delay_;   // formerly MD; controls whether history buffer shifts
 
-    // Connectivity matrices (two optional layers)
-    std::vector<std::vector<double>> C1_;
-    std::vector<std::vector<double>> C2_;
-    std::vector<std::vector<int>>    Delays1_;
-    std::vector<std::vector<int>>    Delays2_;
+    // Connectivity (weights) and delay matrices, stored sparse: only actual
+    // edges (C != 0) are kept, and the delay matrix is built with the exact
+    // same (row, col) pattern so the two can be walked in lock-step every
+    // timestep with no branch and no wasted iteration over absent edges.
+    SpMatXd C1_sp_;
+    SpMatXd C2_sp_;
+    SpMatXi Delays1_sp_;
+    SpMatXi Delays2_sp_;
     bool use_C2_;
 
     // Random number generation
@@ -71,27 +134,44 @@ private:
     std::normal_distribution<double> normal_dist_;
 
     // -----------------------------------------------------------------------
-    // Internal: copy a 2-D numpy array (double) into a vector-of-vectors
+    // Internal: build matched-pattern sparse weight/delay matrices from a
+    // pair of dense numpy buffers (C-contiguous, row-major -- matches numpy
+    // default), wrapped with Eigen::Map so no manual element copy loop is
+    // needed for the initial dense read. Only entries where the weight is
+    // nonzero are kept, since those are the only ones the simulation ever
+    // uses -- this is what lets the per-timestep loop skip absent edges.
     // -----------------------------------------------------------------------
-    void copy_double_matrix(py::array_t<double>& arr,
-                            std::vector<std::vector<double>>& dst) {
-        auto buf = arr.request();
-        auto* ptr = static_cast<double*>(buf.ptr);
-        for (int i = 0; i < N_; ++i)
-            for (int j = 0; j < N_; ++j)
-                dst[i][j] = ptr[i * N_ + j];
-    }
+    void build_sparse(py::array_t<double>& C_arr,
+                       py::array_t<int>&    D_arr,
+                       SpMatXd&             C_sp,
+                       SpMatXi&             D_sp)
+    {
+        auto c_buf = C_arr.request();
+        auto d_buf = D_arr.request();
+        Eigen::Map<const MatrixXdR> C_dense(static_cast<double*>(c_buf.ptr), N_, N_);
+        Eigen::Map<const MatrixXiR> D_dense(static_cast<int*>(d_buf.ptr),   N_, N_);
 
-    // -----------------------------------------------------------------------
-    // Internal: copy a 2-D numpy array (int) into a vector-of-vectors
-    // -----------------------------------------------------------------------
-    void copy_int_matrix(py::array_t<int>& arr,
-                         std::vector<std::vector<int>>& dst) {
-        auto buf = arr.request();
-        auto* ptr = static_cast<int*>(buf.ptr);
-        for (int i = 0; i < N_; ++i)
-            for (int j = 0; j < N_; ++j)
-                dst[i][j] = ptr[i * N_ + j];
+        std::vector<Eigen::Triplet<double>> tw;
+        std::vector<Eigen::Triplet<int>>    td;
+        tw.reserve(static_cast<size_t>(N_) * 4);
+        td.reserve(static_cast<size_t>(N_) * 4);
+
+        for (int i = 0; i < N_; ++i) {
+            for (int j = 0; j < N_; ++j) {
+                const double w = C_dense(i, j);
+                if (w != 0.0) {
+                    tw.emplace_back(i, j, w);
+                    td.emplace_back(i, j, D_dense(i, j));
+                }
+            }
+        }
+
+        C_sp.resize(N_, N_);
+        D_sp.resize(N_, N_);
+        C_sp.setFromTriplets(tw.begin(), tw.end());
+        D_sp.setFromTriplets(td.begin(), td.end());
+        C_sp.makeCompressed();
+        D_sp.makeCompressed();
     }
 
 public:
@@ -129,9 +209,6 @@ public:
         if (tmax_ <= 0.0)
             throw std::invalid_argument("tmax must be positive.");
 
-        C1_.assign(N_, std::vector<double>(N_, 0.0));
-        Delays1_.assign(N_, std::vector<int>(N_, 0));
-
         log_info("Simulator constructed. N=" + std::to_string(N_) +
                  ", max_history=" + std::to_string(max_history_) +
                  ", dt=" + std::to_string(dt_) +
@@ -146,8 +223,7 @@ public:
                           py::object          C2_obj     = py::none(),
                           py::object          Delays2_obj = py::none())
     {
-        copy_double_matrix(C1_arr,    C1_);
-        copy_int_matrix   (Delays1_arr, Delays1_);
+        build_sparse(C1_arr, Delays1_arr, C1_sp_, Delays1_sp_);
 
         if (!C2_obj.is_none()) {
             if (Delays2_obj.is_none())
@@ -155,17 +231,17 @@ public:
                     "Delays2 must be provided when C2 is provided.");
 
             use_C2_ = true;
-            C2_.assign(N_, std::vector<double>(N_, 0.0));
-            Delays2_.assign(N_, std::vector<int>(N_, 0));
 
-            auto C2_arr     = C2_obj.cast<py::array_t<double>>();
+            auto C2_arr      = C2_obj.cast<py::array_t<double>>();
             auto Delays2_arr = Delays2_obj.cast<py::array_t<int>>();
-            copy_double_matrix(C2_arr,     C2_);
-            copy_int_matrix   (Delays2_arr, Delays2_);
+            build_sparse(C2_arr, Delays2_arr, C2_sp_, Delays2_sp_);
 
-            log_info("Two-layer connectivity loaded (C1 + C2).");
+            log_info("Two-layer connectivity loaded (C1 + C2). nnz(C1)=" +
+                     std::to_string(C1_sp_.nonZeros()) +
+                     ", nnz(C2)=" + std::to_string(C2_sp_.nonZeros()));
         } else {
-            log_info("Single-layer connectivity loaded (C1 only).");
+            log_info("Single-layer connectivity loaded (C1 only). nnz(C1)=" +
+                     std::to_string(C1_sp_.nonZeros()));
         }
     }
 
@@ -197,45 +273,45 @@ public:
         // ------------------------------------------------------------------
         // Pre-compute constants
         // ------------------------------------------------------------------
-        std::vector<Complex>              iomega(N_);
-        std::vector<std::vector<double>>  kC1(N_, std::vector<double>(N_));
-        std::vector<std::vector<double>>  kC2;
-
-        if (use_C2_)
-            kC2.assign(N_, std::vector<double>(N_, 0.0));
-
-        for (int i = 0; i < N_; ++i) {
-            iomega[i] = Complex(0.0, 2.0 * M_PI * f_ptr[i]);
-            for (int j = 0; j < N_; ++j) {
-                kC1[i][j] = K * C1_[i][j] * dt_;
-                if (use_C2_)
-                    kC2[i][j] = K * C2_[i][j] * dt_;
-            }
-        }
-
-        const double  dsig      = std::sqrt(dt_) * sig_noise_;
         const Complex a_complex(a, 0.0);
+
+        Eigen::VectorXcd iomega(N_);
+        for (int i = 0; i < N_; ++i)
+            iomega(i) = Complex(0.0, 2.0 * M_PI * f_ptr[i]);
+
+        // a + i*omega is constant across the whole simulation -- precompute
+        // it once instead of recomputing it every timestep.
+        const Eigen::VectorXcd aiomega =
+            Eigen::VectorXcd::Constant(N_, a_complex) + iomega;
+
+        const double Kdt   = K * dt_;
+        const double dsig  = std::sqrt(dt_) * sig_noise_;
 
         // ------------------------------------------------------------------
         // Initialise state history with small noise
         // ------------------------------------------------------------------
-        std::vector<std::vector<Complex>> Z(N_,
-            std::vector<Complex>(max_history_));
+        // Column-major (Eigen default): Z.col(k) is contiguous, which
+        // matches the access pattern Z(j, di) for varying j at fixed di
+        // in the coupling loop below.
+        Eigen::MatrixXcd Z(N_, max_history_);
         for (int i = 0; i < N_; ++i)
             for (int j = 0; j < max_history_; ++j)
-                Z[i][j] = Complex(dt_ * normal_dist_(rng_),
+                Z(i, j) = Complex(dt_ * normal_dist_(rng_),
                                   dt_ * normal_dist_(rng_));
 
         // ------------------------------------------------------------------
-        // Allocate output array
+        // Allocate output array and wrap it (zero-copy) as a row-major
+        // Eigen matrix matching numpy's default C-contiguous layout.
         // ------------------------------------------------------------------
         auto result     = py::array_t<double>({N_, n_save});
         auto result_buf = result.request();
         double* out_ptr = static_cast<double*>(result_buf.ptr);
+        Eigen::Map<MatrixXdRowMajor> out_map(out_ptr, N_, n_save);
 
         // Temporary per-step vectors
-        std::vector<Complex> Znow(N_), dz(N_), noise(N_),
-                             coupling1(N_), coupling2(N_);
+        Eigen::VectorXcd Znow(N_), dz(N_), noise(N_),
+                          coupling1(N_), coupling2(N_);
+        Eigen::ArrayXd abs_sq(N_);
 
         int    nt = 0;
         double t  = dt_;
@@ -252,57 +328,70 @@ public:
             }
 
             // Snapshot current state
-            for (int i = 0; i < N_; ++i)
-                Znow[i] = Z[i][max_history_ - 1];
+            Znow = Z.col(max_history_ - 1);
 
-            // Stuart-Landau local dynamics
-#pragma omp parallel for schedule(static)
-            for (int i = 0; i < N_; ++i) {
-                double abs_sq = std::norm(Znow[i]);
-                dz[i] = Znow[i] * (a_complex + iomega[i] - abs_sq) * dt_;
-            }
+            // Stuart-Landau local dynamics (vectorized via Eigen arrays)
+            abs_sq = Znow.array().abs2();
+            dz = ((Znow.array() * (aiomega.array() - abs_sq.cast<Complex>()))
+                  * dt_).matrix();
 
-            // Delayed coupling
+            // Delayed coupling. The delay index varies per edge, so this
+            // cannot be expressed as a dense matrix-vector product -- but
+            // walking the sparse matrices means we only ever touch edges
+            // that actually exist (no wasted iterations, no branch on a
+            // zero weight), and weight/delay are read in lock-step from
+            // matched-pattern sparse matrices built once in set_connectivity.
 #pragma omp parallel for schedule(static)
             for (int n = 0; n < N_; ++n) {
                 Complex s1(0.0, 0.0), s2(0.0, 0.0);
-                for (int j = 0; j < N_; ++j) {
-                    if (kC1[n][j] != 0.0) {
-                        int di = Delays1_[n][j] - 1;
-                        s1 += kC1[n][j] * (Z[j][di] - Znow[n]);
-                    }
-                    if (use_C2_ && kC2[n][j] != 0.0) {
-                        int di = Delays2_[n][j] - 1;
-                        s2 += kC2[n][j] * (Z[j][di] - Znow[n]);
+
+                {
+                    SpMatXd::InnerIterator itW(C1_sp_, n);
+                    SpMatXi::InnerIterator itD(Delays1_sp_, n);
+                    for (; itW; ++itW, ++itD) {
+                        const int j     = itW.col();
+                        const int di    = itD.value() - 1;
+                        const double k1 = itW.value() * Kdt;
+                        s1 += k1 * (Z(j, di) - Znow(n));
                     }
                 }
-                coupling1[n] = s1;
-                coupling2[n] = s2;
+
+                if (use_C2_) {
+                    SpMatXd::InnerIterator itW(C2_sp_, n);
+                    SpMatXi::InnerIterator itD(Delays2_sp_, n);
+                    for (; itW; ++itW, ++itD) {
+                        const int j     = itW.col();
+                        const int di    = itD.value() - 1;
+                        const double k2 = itW.value() * Kdt;
+                        s2 += k2 * (Z(j, di) - Znow(n));
+                    }
+                }
+
+                coupling1(n) = s1;
+                coupling2(n) = s2;
             }
 
-            // Shift history buffer
+            // Shift history buffer -- a single vectorized block assignment
+            // instead of an O(N * max_history) element-wise loop.
             if (mean_delay_ > 0.0) {
-#pragma omp parallel for schedule(static)
-                for (int i = 0; i < N_; ++i)
-                    for (int j = 0; j < max_history_ - 1; ++j)
-                        Z[i][j] = Z[i][j + 1];
+                Z.leftCols(max_history_ - 1) = Z.rightCols(max_history_ - 1);
             }
 
-            // Add noise and update state
+            // Generate noise (inherently serial due to the RNG stream)
             for (int i = 0; i < N_; ++i) {
-                noise[i] = Complex(dsig * normal_dist_(rng_),
-                                   dsig * normal_dist_(rng_));
-                Complex coupling_total = coupling1[i];
-                if (use_C2_)
-                    coupling_total += coupling2[i];
-                Z[i][max_history_ - 1] =
-                    Znow[i] + dz[i] + noise[i] + coupling_total;
+                noise(i) = Complex(dsig * normal_dist_(rng_),
+                                    dsig * normal_dist_(rng_));
             }
+
+            // Add noise and update state (vectorized)
+            Eigen::VectorXcd coupling_total = coupling1;
+            if (use_C2_)
+                coupling_total += coupling2;
+            Z.col(max_history_ - 1) = Znow + dz + noise + coupling_total;
 
             // Record output
             if (t > t_prev_ && (step % save_interval == 0) && (nt < n_save)) {
-                for (int i = 0; i < N_; ++i)
-                    out_ptr[i * n_save + nt] = Z[i][max_history_ - 1].real();
+                out_map.col(nt) = Z.col(max_history_ - 1).real();
                 ++nt;
             }
         }
@@ -321,7 +410,7 @@ public:
 #endif
 PYBIND11_MODULE(MODULE_NAME, m) {
     m.doc() = R"pbdoc(
-        C++ accelerated Stuart-Landau neural network simulator.
+        C++ accelerated Stuart-Landau neural network simulator (Eigen-backed).
 
         Provides ``StuartLandauSimulator``, a delayed-coupled oscillator
         network that models resting-state neural dynamics on an empirical

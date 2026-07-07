@@ -18,6 +18,7 @@ dependencies:
 
   # Build tools
   - pybind11>=2.11
+  - eigen>=3.4        # header-only; required by stuart_landau_simulator.cpp
   - setuptools>=68
   - pip
 

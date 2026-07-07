@@ -73,9 +73,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--op-net", "-n",
         type=int,
-        choices=[2, 3, 4],
+        choices=[1, 2, 3, 4],
         default=3,
-        help="Network connectivity mode: 2=velocity, 3=tau (default), 4=bimodal.",
+        help="Network connectivity mode: 1=Deco, 2=velocity, 3=tau (default), 4=bimodal.",
         )
     parser.add_argument(
         "--op-model", "-m",

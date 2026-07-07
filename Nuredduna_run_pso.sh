@@ -44,7 +44,7 @@ MAX_ATTEMPTS=0             # 0 = retry indefinitely
 # SLURM resource request
 JOB_TIME="123:30"
 JOB_CPUS=1
-JOB_MEM=16                 # GB
+JOB_MEM=8                 # GB
 
 # ---------------------------------------------------------------------------
 # Parse positional args
@@ -122,6 +122,7 @@ for r in $rea_list; do
 
       # Wait for output log to appear
       while [ ! -f "$LOGFILE_o" ]; do
+        echo "Waiting for Job $LOGFILE_o, sleep $SLEEP_BETWEEN_POLLS ..."
         sleep $SLEEP_BETWEEN_POLLS
       done
 

@@ -1,6 +1,6 @@
 # QUICKSTART
 
-Get the PSO functional-connectivity pipeline running in five minutes.
+Get the PSO functional-connectivity pipeline running in five minutes. (folded connectome, multiarch, Eigen)
 
 ---
 
@@ -36,6 +36,8 @@ Matplotlib, Seaborn, pybind11).
 ```bash
 
 bash scripts/build_multiarch.sh
+
+python3 setup_multiarch.py build_ext --inplace
 python source/core/select_backend.py
 ```
 
@@ -66,7 +68,7 @@ data/
 ```
 
 DATA
-scp -r /mnt/c/Users/aleph/Desktop/Job/Code/Experimental/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer
+scp -r /mnt/c/Users/aleph/Desktop/Katana/Katana_MSI_Windows_/Job/Code/Multiarch/neuro_sl_optimizer/data aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer
 
 CHECKPOINT
 rat=R02
@@ -82,10 +84,54 @@ mkdir -p /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/d
 cp -r /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/raw/t1/R15 /data/workspaces/aaaguado/experimental_fine-tuning/neuro-sl-optimizer/data/external/t1
 
 DOWNLOAD
-ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_multiarch/neuro-sl-optimizer/results \
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results \
 && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna
 
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/checkpoints_C && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna/checkpoints_C
+
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_C/results_t1_2000_20_R14/M3_r3_c1_f1 && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_R14
+
+rat=R19
+r=1
+file=optimal_correlation.png
+mkdir -p /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+file=target_correlation.png
+mkdir -p /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+
+file=th-0.0_${rat}_w_gen.png
+mkdir -p /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+
+file=FC_iteration_14*
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_C/results_t1_2000_20_${rat}/M3_r${r}_c1_f1
+
 ls /data/workspaces/aaaguado/experimental_combined/neuro-sl-optimizer/results/optimization_C/results_t1_500_20_R16/M3_r3_c1_f1
+
+
+file=checkpoints_t2_C
+mkdir -p /mnt/c/Users/aleph/Desktop/Nuredduna/${file}
+ssh aaaguado@ifisc.uib-csic.es "cd /data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/${file} && tar --exclude='*.npz' --exclude='*.pkl' -cvf - ." | tar -xf - -C /mnt/c/Users/aleph/Desktop/Nuredduna/${file}
+
+rat=R19
+r=5
+iterations=1000
+
+mkdir -p /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1
+
+file=target_correlation.png
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1
+
+file=optimal_correlation.png
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1
+
+file=th-0.0_${rat}_w_gen.png
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1
+
+
+file=FC_iteration_9*
+scp aaaguado@ifisc.uib-csic.es:/data/workspaces/aaaguado/experimental_folding/neuro-sl-optimizer/results/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1/${file} /mnt/c/Users/aleph/Desktop/Nuredduna/optimization_t2_C/results_t2_${iterations}_20_${rat}/M3_r${r}_c1_f1
 
 ### 5. Edit configuration
 

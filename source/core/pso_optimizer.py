@@ -217,6 +217,9 @@ class CorrelationPSO:
         try:
             if( len(params) > 1 ):                
                 cfg = SimulationConfig(
+                    #Wg=params,
+                    #K=1,
+                    
                     Wg=params[1:],
                     K=params[0],
                     
@@ -646,7 +649,8 @@ def run_pso_optimisation(
     print(output_base)
     
     if( cfg_raw.get( "checkpoint_dir" ).endswith("_C") ):
-        output_dir = ( Path("results/optimization_C") / output_base /       
+        
+        output_dir = ( Path( cfg_raw.get( "optimization_dir" ) ) / output_base /       
                        f"M{op_net}_r{realization_index}_c{op_corr}_f{op_model}")
         
     elif( cfg_raw.get( "checkpoint_dir" ).endswith("_K") ):
@@ -760,11 +764,12 @@ def run_pso_optimisation(
             for j in range(N):
                 if i < j:
                     if( matrix[i, j] > 0 ):
-                        wg.append( matrix[i, j] )
+                        wg.append( matrix[i, j] * 1 ) 
         
         #print(wg)
+        print(np.sum(wg))
         
-        wg_max = max( wg )
+        wg_max = max( wg ) * 1
         wg_len = len( wg )
         
         print(f"wg_max: {wg_max}, wg_len: {wg_len}")
@@ -772,6 +777,7 @@ def run_pso_optimisation(
         bounds_w = np.tile( [ -wg_max, wg_max ], ( wg_len, 1) )
         
         bounds = np.vstack([bounds_K, bounds_w])
+        #bounds = bounds_w
         #"""      
         
         wg = Kg + wg
@@ -864,6 +870,9 @@ def run_pso_optimisation(
     
     if( len( best_params ) > 1 ):
         final_cfg = SimulationConfig(
+            #Wg=best_params,
+            #K=1,
+            
             Wg=best_params[1:],
             K=best_params[0],
             

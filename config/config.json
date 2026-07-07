@@ -3,19 +3,21 @@
 
   "data_dir":     "data/raw/t1",
   "_data_dir":     "data/external/t1",
-  
+
   "signals_dir":  "data/processed/p2",
   "signals_file": "signals.json",
 
-  "input_dir":    "results_t1_2_",
+  "input_dir":    "results_t1_10_",
   "output_dir":   "results_t1_",
 
-  "max_iter":     2,
-  "n_particles":  2,
+  "max_iter":     10,
+  "n_particles":  10,
 
   "_checkpoint_dir":           "results/checkpoints",
   "__checkpoint_dir":           "results/checkpoints_K",
-  "checkpoint_dir":           "results/checkpoints_C",
+
+  "checkpoint_dir":           "results/checkpoints_t1_C",
+  "optimization_dir":         "results/optimization_t1_C",
 
   "resume_from_checkpoint":   null,
   "_resume_from_checkpoint":  "checkpoint_iter_0499.npz",
@@ -26,7 +28,7 @@
   "n_rois":       158,
   "_invalid_rois": [0, 1, 2, 41, 78, 79, 80, 81, 120, 157],
   "invalid_rois": [0, 1, 2, 41, 78],
-  
+
   "pso_w":        0.7,
   "pso_c1":       1.5,
   "pso_c2":       1.5,
@@ -35,7 +37,7 @@
   "filter_low_freq":  0.01,
   "filter_fs":        10000.0,
   "filter_order":     50,
-  
+
   "downsample_step":  20000,
   "cross_corr_frac":  0.2,
 

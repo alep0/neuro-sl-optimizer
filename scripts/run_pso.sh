@@ -15,7 +15,7 @@
 #   -r, --realizations  "1 2 3"   Space-separated list of realization IDs
 #                                  (default: "1")
 #   -c, --op-corr       1|2       Correlation mode (default: 1)
-#   -n, --op-net        2|3|4     Network mode (default: 3)
+#   -n, --op-net        1|2|3|4     Network mode (default: 3)
 #   -m, --op-model      1|2       Model variant (default: 1)
 #   -C, --config        PATH      Path to config.json
 #   -l, --log-level     DEBUG|INFO|WARNING|ERROR  (default: INFO)
@@ -101,8 +101,8 @@ validate_inputs() {
         valid=false
     fi
 
-    if ! [[ "$OP_NET" =~ ^[234]$ ]]; then
-        log_error "op-net must be 2, 3, or 4, got: $OP_NET"
+    if ! [[ "$OP_NET" =~ ^[1234]$ ]]; then
+        log_error "op-net must be 1, 2, 3, or 4, got: $OP_NET"
         valid=false
     fi
 

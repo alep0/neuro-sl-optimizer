@@ -16,6 +16,9 @@ At import time ``source/core/simulation_engine.py`` calls
 Build
 -----
     pip install pybind11
+    # Eigen (header-only) must also be available -- see environment.yml,
+    # or set EIGEN3_INCLUDE_DIR to point at a directory containing
+    # 'Eigen/Dense' if it's not discoverable via pkg-config/conda.
     python setup_multiarch.py build_ext --inplace
 
 Or drive all tiers via the helper script:
@@ -59,6 +62,64 @@ class _Pybind11Include:
 
 
 # ---------------------------------------------------------------------------
+# Eigen include path (header-only -- just need to find where it's installed)
+#
+# Resolution order:
+#   1. EIGEN3_INCLUDE_DIR env var (explicit override)
+#   2. `pkg-config --cflags eigen3` (works for most Linux package managers)
+#   3. $CONDA_PREFIX/include/eigen3 (conda-forge `eigen` package layout)
+#   4. Common system install locations (Homebrew, apt, /usr/local)
+# ---------------------------------------------------------------------------
+def _find_eigen_include() -> str:
+    env_override = os.environ.get("EIGEN3_INCLUDE_DIR")
+    if env_override and Path(env_override).is_dir():
+        return env_override
+
+    try:
+        out = subprocess.check_output(
+            ["pkg-config", "--cflags-only-I", "eigen3"], text=True
+        ).strip()
+        if out.startswith("-I"):
+            candidate = out[2:].strip()
+            if Path(candidate).is_dir():
+                return candidate
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        candidate = Path(conda_prefix) / "include" / "eigen3"
+        if candidate.is_dir():
+            return str(candidate)
+        # Some conda-forge builds install headers straight into include/
+        candidate = Path(conda_prefix) / "include"
+        if (candidate / "Eigen" / "Dense").exists():
+            return str(candidate)
+
+    for candidate in (
+        "/usr/include/eigen3",
+        "/usr/local/include/eigen3",
+        "/opt/homebrew/include/eigen3",
+        "/usr/local/opt/eigen/include/eigen3",
+    ):
+        if Path(candidate).is_dir():
+            return candidate
+
+    raise RuntimeError(
+        "Could not locate the Eigen3 headers. Install the 'eigen' conda-forge "
+        "package (see environment.yml), or set the EIGEN3_INCLUDE_DIR "
+        "environment variable to point at the directory containing "
+        "'Eigen/Dense' (e.g. /path/to/eigen3)."
+    )
+
+
+class _EigenInclude:
+    """Lazily resolved so the check runs at build time, not at import time."""
+    def __str__(self) -> str:
+        return _find_eigen_include()
+
+
+# ---------------------------------------------------------------------------
 # Compiler-flag helpers
 # ---------------------------------------------------------------------------
 def _has_flag(compiler, flag: str) -> bool:
@@ -79,13 +140,19 @@ def _has_flag(compiler, flag: str) -> bool:
 
 def _common_compile_args(march: str) -> tuple[list[str], list[str]]:
     """Return (compile_args, link_args) for a given -march flag."""
+    # The simulator parallelizes its own coupling loop with #pragma omp;
+    # Eigen has its own (separate) internal multithreading for things like
+    # matrix products, which would oversubscribe cores if left enabled.
+    eigen_defines = ["-DEIGEN_DONT_PARALLELIZE"]
+
     if sys.platform == "win32":
         # Windows: no -march equivalent; use /O2 + /openmp only
-        return ["/O2", "/openmp", "/std:c++17", "/fp:fast", "/EHsc"], []
+        return (["/O2", "/openmp", "/std:c++17", "/fp:fast", "/EHsc"]
+                + ["/DEIGEN_DONT_PARALLELIZE"], [])
 
     if sys.platform == "darwin":
         compile_args = ["-O3", "-std=c++17", march,
-                        "-Xpreprocessor", "-fopenmp", "-ffast-math"]
+                        "-Xpreprocessor", "-fopenmp", "-ffast-math"] + eigen_defines
         try:
             prefix = subprocess.check_output(
                 ["brew", "--prefix", "libomp"], text=True
@@ -97,7 +164,7 @@ def _common_compile_args(march: str) -> tuple[list[str], list[str]]:
         return compile_args, link_args
 
     # Linux / POSIX
-    compile_args = ["-O3", "-std=c++17", march, "-fopenmp", "-ffast-math"]
+    compile_args = ["-O3", "-std=c++17", march, "-fopenmp", "-ffast-math"] + eigen_defines
     link_args    = ["-fopenmp"]
     return compile_args, link_args
 
@@ -155,7 +222,7 @@ for suffix, march, _cpu_flags in ISA_TIERS:
         Extension(
             module_name,
             sources=["source/core/stuart_landau_simulator.cpp"],
-            include_dirs=[_Pybind11Include()],
+            include_dirs=[_Pybind11Include(), _EigenInclude()],
             language="c++",
             extra_compile_args=compile_args,
             extra_link_args=link_args,
